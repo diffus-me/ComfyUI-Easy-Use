@@ -15,6 +15,7 @@ import json
 import torch
 import comfy.utils
 import folder_paths
+import execution_context
 
 DEFAULT_FLOW_NUM = 2
 MAX_FLOW_NUM = 10
@@ -1455,7 +1456,6 @@ class imageToMask:
 class saveText:
 
     def __init__(self):
-        self.output_dir = folder_paths.output_directory
         self.type = 'output'
 
     @classmethod
@@ -1483,7 +1483,7 @@ class saveText:
     def save_image(self, images, filename_prefix='', extension='png',quality=100, prompt=None,
                    extra_pnginfo=None, delimiter='_', filename_number_start='true', number_padding=4,
                    overwrite_mode='prefix_as_filename', output_path='', show_history='true', show_previews='true',
-                   embed_workflow='true', lossless_webp=False, ):
+                   embed_workflow='true', lossless_webp=False, context: execution_context.ExecutionContext=None):
         results = list()
         for image in images:
             i = 255. * image.cpu().numpy()
@@ -1541,7 +1541,8 @@ class saveText:
                 print(e)
 
     def save_text(self, text, output_file_path, file_name, file_extension, overwrite, filename_number_start='true', image=None, prompt=None,
-                  extra_pnginfo=None):
+                  extra_pnginfo=None,
+                  context: execution_context.ExecutionContext=None):
         if isinstance(file_name, list):
             file_name = file_name[0]
         filepath = str(os.path.join(output_file_path, file_name)) + "." + file_extension
@@ -1597,15 +1598,15 @@ class saveText:
             number_padding = 4
             lossless_webp = (False,)
 
-            original_output = self.output_dir
+            original_output = folder_paths.get_output_directory(context.user_hash)
 
             # Setup output path
             if output_file_path in [None, '', "none", "."]:
-                output_path = self.output_dir
+                output_path = folder_paths.get_output_directory(context.user_hash)
             else:
                 output_path = ''
             if not os.path.isabs(output_file_path):
-                output_path = os.path.join(self.output_dir, output_path)
+                output_path = os.path.join(folder_paths.get_output_directory(context.user_hash), output_path)
             base_output = os.path.basename(output_path)
             if output_path.endswith("ComfyUI/output") or output_path.endswith("ComfyUI\output"):
                 base_output = ""
@@ -1613,7 +1614,7 @@ class saveText:
             # Check output destination
             if output_path.strip() != '':
                 if not os.path.isabs(output_path):
-                    output_path = os.path.join(folder_paths.output_directory, output_path)
+                    output_path = os.path.join(folder_paths.get_output_directory(context.user_hash), output_path)
                 if not os.path.exists(output_path.strip()):
                     print(
                         f'The path `{output_path.strip()}` specified doesn\'t exist! Creating directory.')
@@ -1623,7 +1624,7 @@ class saveText:
             images.append(image)
             images = torch.cat(images, dim=0)
             self.save_image(images, imagepath, 'png', 100, prompt, extra_pnginfo, filename_number_start=filename_number_start, output_path=output_path, delimiter=delimiter,
-                             number_padding=number_padding, lossless_webp=lossless_webp)
+                             number_padding=number_padding, lossless_webp=lossless_webp, context=context)
 
             log_node_info("Save Text", f"Saving Image to {imagepath}")
             result['result'] = (text, image)

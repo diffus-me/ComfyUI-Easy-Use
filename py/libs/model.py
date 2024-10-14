@@ -1,5 +1,7 @@
 import json
 import os
+
+import execution_context
 import folder_paths
 import server
 from .utils import find_tags
@@ -16,18 +18,18 @@ class easyModelManager:
         }
         self.model_lists = {}
 
-    def find_thumbnail(self, model_type, name):
+    def find_thumbnail(self, context: execution_context.ExecutionContext, model_type, name):
         file_no_ext = os.path.splitext(name)[0]
         for ext in self.img_suffixes:
-            full_path = folder_paths.get_full_path(model_type, file_no_ext + ext)
+            full_path = folder_paths.get_full_path(context, model_type, file_no_ext + ext)
             if os.path.isfile(str(full_path)):
                 return full_path
         return None
 
-    def get_model_lists(self, model_type):
+    def get_model_lists(self, context: execution_context.ExecutionContext, model_type):
         if model_type not in self.models_config:
             return []
-        filenames = folder_paths.get_filename_list(model_type)
+        filenames = folder_paths.get_filename_list(context, model_type)
         model_lists = []
         for name in filenames:
             model_suffix = os.path.splitext(name)[-1]
@@ -38,11 +40,11 @@ class easyModelManager:
                     "name": os.path.basename(os.path.splitext(name)[0]),
                     "full_name": name,
                     "remark": '',
-                    "file_path": folder_paths.get_full_path(model_type, name),
+                    "file_path": folder_paths.get_full_path(context, model_type, name),
                     "type": model_type,
                     "suffix": model_suffix,
                     "dir_tags": find_tags(name),
-                    "cover": self.find_thumbnail(model_type, name),
+                    "cover": self.find_thumbnail(context, model_type, name),
                     "metadata": None,
                     "sha256": None
                 }

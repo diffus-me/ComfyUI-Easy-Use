@@ -2,6 +2,7 @@ import os
 import json
 import comfy
 import folder_paths
+import execution_context
 from .config import RESOURCES_DIR
 from .libs.utils import getMetadata
 def load_preset(filename):
@@ -393,13 +394,13 @@ class XYplot_Negative_Cond_List:
 class XYplot_Control_Net:
     parameters = ["strength", "start_percent", "end_percent"]
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         def get_file_list(filenames):
             return [file for file in filenames if file != "put_models_here.txt" and "lllite" not in file]
 
         return {
             "required": {
-                "control_net_name": (get_file_list(folder_paths.get_filename_list("controlnet")),),
+                "control_net_name": (get_file_list(folder_paths.get_filename_list(context, "controlnet")),),
                 "image": ("IMAGE",),
                 "target_parameter": (cls.parameters,),
                 "batch_count": ("INT", {"default": 3, "min": 1, "max": 30}),
@@ -473,10 +474,10 @@ class XYplot_Checkpoint:
     modes = ["Ckpt Names", "Ckpt Names+ClipSkip", "Ckpt Names+ClipSkip+VAE"]
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
 
-        checkpoints = ["None"] + folder_paths.get_filename_list("checkpoints")
-        vaes = ["Baked VAE"] + folder_paths.get_filename_list("vae")
+        checkpoints = ["None"] + folder_paths.get_filename_list(context, "checkpoints")
+        vaes = ["Baked VAE"] + folder_paths.get_filename_list(context, "vae")
 
         inputs = {
             "required": {
@@ -531,8 +532,8 @@ class XYplot_Lora:
     modes = ["Lora Names", "Lora Names+Weights"]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        loras = ["None"] + folder_paths.get_filename_list("loras")
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
+        loras = ["None"] + folder_paths.get_filename_list(context, "loras")
 
         inputs = {
             "required": {
@@ -551,6 +552,9 @@ class XYplot_Lora:
         inputs["optional"] = {
             "optional_lora_stack": ("LORA_STACK",),
             "display_trigger_word": ("BOOLEAN", {"display_trigger_word": True, "tooltip": "Trigger words showing lora model pass through the model's metadata, but not necessarily accurately."}),
+        }
+        inputs["hidden"] = {
+            "context": "EXECUTION_CONTEXT",
         }
         return inputs
 
@@ -580,11 +584,11 @@ class XYplot_Lora:
         else:
             return []
 
-    def get_trigger_words(self, lora_name, display=False):
+    def get_trigger_words(self, lora_name, display=False, context: execution_context.ExecutionContext=None):
         if not display:
             return ""
 
-        file_path = folder_paths.get_full_path('loras', lora_name)
+        file_path = folder_paths.get_full_path(context, 'loras', lora_name)
         if not file_path:
             return ''
         header = getMetadata(file_path)
@@ -607,7 +611,7 @@ class XYplot_Lora:
                 clip_strs[i] = clip_strength
 
         # Extend each sub-array with lora_stack if it's not None
-        values = [lora.replace(',', '*')+','+str(model_str)+','+str(clip_str) +',' + self.get_trigger_words(lora, display_trigger_words) for lora, model_str, clip_str
+        values = [lora.replace(',', '*')+','+str(model_str)+','+str(clip_str) +',' + self.get_trigger_words(lora, display_trigger_words, context=kwargs["context"]) for lora, model_str, clip_str
                     in zip(loras, model_strs, clip_strs) if lora != "None"]
 
         optional_lora_stack = kwargs.get("optional_lora_stack") if "optional_lora_stack" in kwargs else []
@@ -619,9 +623,9 @@ class XYplot_Lora:
 class XYplot_ModelMergeBlocks:
 
     @classmethod
-    def INPUT_TYPES(s):
-        checkpoints = folder_paths.get_filename_list("checkpoints")
-        vae = ["Use Model 1", "Use Model 2"] + folder_paths.get_filename_list("vae")
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
+        checkpoints = folder_paths.get_filename_list(context, "checkpoints")
+        vae = ["Use Model 1", "Use Model 2"] + folder_paths.get_filename_list(context, "vae")
 
         preset = ["Preset"]  # 20
         preset += load_preset("mmb-preset.txt")

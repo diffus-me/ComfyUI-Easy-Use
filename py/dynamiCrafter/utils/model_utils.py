@@ -10,7 +10,7 @@ from comfy import diffusers_convert
 try:
     import comfy.text_encoders.sd2_clip
 except ImportError:
-    from comfy import sd2_clip
+    from comfy.text_encoders import sd2_clip
 
 from comfy import supported_models_base
 from comfy import latent_formats

@@ -1,3 +1,4 @@
+import execution_context
 import folder_paths
 import comfy.controlnet
 import comfy.model_management
@@ -9,7 +10,7 @@ class easyControlnet:
     def __init__(self):
         pass
 
-    def apply(self, control_net_name, image, positive, negative, strength, start_percent=0, end_percent=1, control_net=None, scale_soft_weights=1, mask=None, union_type=None, easyCache=None, use_cache=True, model=None, vae=None):
+    def apply(self, context: execution_context.ExecutionContext, control_net_name, image, positive, negative, strength, start_percent=0, end_percent=1, control_net=None, scale_soft_weights=1, mask=None, union_type=None, easyCache=None, use_cache=True, model=None, vae=None):
         if strength == 0:
             return (positive, negative)
 
@@ -19,7 +20,7 @@ class easyControlnet:
             from ..kolors.model_patch import patch_controlnet
             if control_net is None:
                 with applyKolorsUnet():
-                    control_net = easyCache.load_controlnet(control_net_name, scale_soft_weights, use_cache)
+                    control_net = easyCache.load_controlnet(context, control_net_name, scale_soft_weights, use_cache)
                 control_net = patch_controlnet(model, control_net)
         else:
             if control_net is None:

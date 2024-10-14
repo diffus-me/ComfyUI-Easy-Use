@@ -1,6 +1,8 @@
 import re
 import random
 import os
+
+import execution_context
 import folder_paths
 import yaml
 import json
@@ -272,7 +274,7 @@ def remove_lora_tags(string):
 
     return result
 
-def process_with_loras(wildcard_opt, model, clip, title="Positive", seed=None, can_load_lora=True, pipe_lora_stack=[], easyCache=None):
+def process_with_loras(context: execution_context.ExecutionContext, wildcard_opt, model, clip, title="Positive", seed=None, can_load_lora=True, pipe_lora_stack=[], easyCache=None):
     pass1 = process(wildcard_opt, seed)
     loras = extract_lora_values(pass1)
     pass2 = remove_lora_tags(pass1)
@@ -292,7 +294,7 @@ def process_with_loras(wildcard_opt, model, clip, title="Positive", seed=None, c
                 "lbw_b": lbw_b,
                 "lbw": lbw
             }
-            model, clip = easyCache.load_lora(lora)
+            model, clip = easyCache.load_lora(context, lora)
             lora["model"] = model
             lora["clip"] = clip
             pipe_lora_stack.append(lora)

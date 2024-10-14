@@ -243,17 +243,17 @@ def to_lora_patch_dict(state_dict: dict) -> dict:
 
     return patch_flat
 
-def easySave(images, filename_prefix, output_type, prompt=None, extra_pnginfo=None):
+def easySave(images, filename_prefix, output_type, prompt=None, extra_pnginfo=None, user_hash=''):
     """Save or Preview Image"""
     from nodes import PreviewImage, SaveImage
     if output_type in ["Hide", "None"]:
         return list()
     elif output_type in ["Preview", "Preview&Choose"]:
         filename_prefix = 'easyPreview'
-        results = PreviewImage().save_images(images, filename_prefix, prompt, extra_pnginfo)
+        results = PreviewImage().save_images(images, filename_prefix, prompt, extra_pnginfo, user_hash=user_hash)
         return results['ui']['images']
     else:
-        results = SaveImage().save_images(images, filename_prefix, prompt, extra_pnginfo)
+        results = SaveImage().save_images(images, filename_prefix, prompt, extra_pnginfo, user_hash=user_hash)
         return results['ui']['images']
 
 def getMetadata(filepath):

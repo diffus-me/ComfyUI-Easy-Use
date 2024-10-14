@@ -1,4 +1,6 @@
 import re, time, os, psutil
+
+import execution_context
 import folder_paths
 import comfy.utils
 import comfy.sd
@@ -221,7 +223,7 @@ class easyLoader:
                 del self.loaded_objects[obj_type][item[0]]
                 current_memory = self.get_memory_usage()
 
-    def load_checkpoint(self, ckpt_name, config_name=None, load_vision=False):
+    def load_checkpoint(self, context: execution_context.ExecutionContext, ckpt_name, config_name=None, load_vision=False):
         cache_name = ckpt_name
         if config_name not in [None, "Default"]:
             cache_name = ckpt_name + "_" + config_name
@@ -230,19 +232,19 @@ class easyLoader:
             clip = self.loaded_objects["clip"][cache_name][0] if not load_vision else None
             return self.loaded_objects["ckpt"][cache_name][0], clip, self.loaded_objects["bvae"][cache_name][0], clip_vision
 
-        ckpt_path = folder_paths.get_full_path("checkpoints", ckpt_name)
+        ckpt_path = folder_paths.get_full_path(context, "checkpoints", ckpt_name)
 
         output_clip = False if load_vision else True
         output_clipvision = True if load_vision else False
         if config_name not in [None, "Default"]:
-            config_path = folder_paths.get_full_path("configs", config_name)
-            loaded_ckpt = comfy.sd.load_checkpoint(config_path, ckpt_path, output_vae=True, output_clip=output_clip, embedding_directory=folder_paths.get_folder_paths("embeddings"))
+            config_path = folder_paths.get_full_path(context, "configs", config_name)
+            loaded_ckpt = comfy.sd.load_checkpoint(config_path, ckpt_path, output_vae=True, output_clip=output_clip, embedding_directory=folder_paths.get_folder_paths(context, "embeddings"))
         else:
             model_options = {}
             if re.search("nf4", ckpt_name):
                 from ..bitsandbytes_NF4 import OPS
                 model_options = {"custom_operations": OPS}
-            loaded_ckpt = comfy.sd.load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=output_clip, output_clipvision=output_clipvision, embedding_directory=folder_paths.get_folder_paths("embeddings"), model_options=model_options)
+            loaded_ckpt = comfy.sd.load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=output_clip, output_clipvision=output_clipvision, embedding_directory=folder_paths.get_folder_paths(context, "embeddings"), model_options=model_options)
 
         self.add_to_cache("ckpt", cache_name, loaded_ckpt[0])
         self.add_to_cache("bvae", cache_name, loaded_ckpt[2])
@@ -258,11 +260,11 @@ class easyLoader:
 
         return loaded_ckpt[0], clip, loaded_ckpt[2], clip_vision
 
-    def load_vae(self, vae_name):
+    def load_vae(self, context: execution_context.ExecutionContext, vae_name):
         if vae_name in self.loaded_objects["vae"]:
             return self.loaded_objects["vae"][vae_name][0]
 
-        vae_path = folder_paths.get_full_path("vae", vae_name)
+        vae_path = folder_paths.get_full_path(context, "vae", vae_name)
         sd = comfy.utils.load_torch_file(vae_path)
         loaded_vae = comfy.sd.VAE(sd=sd)
         self.add_to_cache("vae", vae_name, loaded_vae)
@@ -270,19 +272,19 @@ class easyLoader:
 
         return loaded_vae
 
-    def load_unet(self, unet_name):
+    def load_unet(self, context: execution_context.ExecutionContext, unet_name):
         if unet_name in self.loaded_objects["unet"]:
             log_node_info("Load UNet", f"{unet_name} cached")
             return self.loaded_objects["unet"][unet_name][0]
 
-        unet_path = folder_paths.get_full_path("unet", unet_name)
+        unet_path = folder_paths.get_full_path(context, "unet", unet_name)
         model = comfy.sd.load_unet(unet_path)
         self.add_to_cache("unet", unet_name, model)
         self.eviction_based_on_memory()
 
         return model
 
-    def load_controlnet(self, control_net_name, scale_soft_weights=1, use_cache=True):
+    def load_controlnet(self, context: execution_context.ExecutionContext, control_net_name, scale_soft_weights=1, use_cache=True):
         unique_id = f'{control_net_name};{str(scale_soft_weights)}'
         if use_cache and unique_id in self.loaded_objects["controlnet"]:
             return self.loaded_objects["controlnet"][unique_id][0]
@@ -291,21 +293,20 @@ class easyLoader:
                 soft_weight_cls = NODE_CLASS_MAPPINGS['ScaledSoftControlNetWeights']
                 (weights, timestep_keyframe) = soft_weight_cls().load_weights(scale_soft_weights, False)
                 cn_adv_cls = NODE_CLASS_MAPPINGS['ControlNetLoaderAdvanced']
-                control_net, = cn_adv_cls().load_controlnet(control_net_name, timestep_keyframe)
+                control_net, = cn_adv_cls().load_controlnet(context, control_net_name, timestep_keyframe, context)
             else:
                 raise Exception(f"[Advanced-ControlNet Not Found] you need to install 'COMFYUI-Advanced-ControlNet'")
         else:
-            controlnet_path = folder_paths.get_full_path("controlnet", control_net_name)
+            controlnet_path = folder_paths.get_full_path(context, "controlnet", control_net_name)
             control_net = comfy.controlnet.load_controlnet(controlnet_path)
         if use_cache:
             self.add_to_cache("controlnet", unique_id, control_net)
             self.eviction_based_on_memory()
 
         return control_net
-    def load_clip(self, clip_name, type='stable_diffusion', load_clip=None):
+    def load_clip(self, context: execution_context.ExecutionContext, clip_name, type='stable_diffusion', load_clip=None):
         if clip_name in self.loaded_objects["clip"]:
             return self.loaded_objects["clip"][clip_name][0]
-
         if type == 'stable_diffusion':
             clip_type = comfy.sd.CLIPType.STABLE_DIFFUSION
         elif type == 'stable_cascade':
@@ -316,14 +317,14 @@ class easyLoader:
             clip_type = comfy.sd.CLIPType.FLUX
         elif type == 'stable_audio':
             clip_type = comfy.sd.CLIPType.STABLE_AUDIO
-        clip_path = folder_paths.get_full_path("clip", clip_name)
-        load_clip = comfy.sd.load_clip(ckpt_paths=[clip_path], embedding_directory=folder_paths.get_folder_paths("embeddings"), clip_type=clip_type)
+        clip_path = folder_paths.get_full_path(context, "clip", clip_name)
+        load_clip = comfy.sd.load_clip(ckpt_paths=[clip_path], embedding_directory=folder_paths.get_folder_paths(context, "embeddings"), clip_type=clip_type)
         self.add_to_cache("clip", clip_name, load_clip)
         self.eviction_based_on_memory()
 
         return load_clip
 
-    def load_lora(self, lora, model=None, clip=None, type=None , use_cache=True):
+    def load_lora(self, context: execution_context.ExecutionContext, lora, model=None, clip=None, type=None , use_cache=True):
         lora_name = lora["lora_name"]
         model = model if model is not None else lora["model"]
         clip = clip if clip is not None else lora["clip"]
@@ -343,10 +344,10 @@ class easyLoader:
             return self.loaded_objects["lora"][unique_id][0]
 
         orig_lora_name = lora_name
-        lora_name = self.resolve_lora_name(lora_name)
+        lora_name = self.resolve_lora_name(context, lora_name)
 
         if lora_name is not None:
-            lora_path = folder_paths.get_full_path("loras", lora_name)
+            lora_path = folder_paths.get_full_path(context, "loras", lora_name)
         else:
             lora_path = None
 
@@ -360,7 +361,7 @@ class easyLoader:
                     raise Exception('[InspirePack Not Found] you need to install ComfyUI-Inspire-Pack')
                 cls = NODE_CLASS_MAPPINGS['LoraLoaderBlockWeight //Inspire']
                 model, clip, _ = cls().doit(model, clip, lora_name, model_strength, clip_strength, False, 0,
-                                            lbw_a, lbw_b, "", lbw)
+                                            lbw_a, lbw_b, "", lbw, context=context)
             else:
                 _lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
                 keys = _lora.keys()
@@ -404,12 +405,12 @@ class easyLoader:
 
         return model, clip
 
-    def resolve_lora_name(self, name):
+    def resolve_lora_name(self, context: execution_context.ExecutionContext, name):
         if os.path.exists(name):
             return name
         else:
             if len(self.lora_name_cache) == 0:
-                loras = folder_paths.get_filename_list("loras")
+                loras = folder_paths.get_filename_list(context, "loras")
                 self.lora_name_cache.extend(loras)
             for x in self.lora_name_cache:
                 if x.endswith(name):
@@ -417,7 +418,7 @@ class easyLoader:
 
             # 如果刷新网页后新添加的lora走这个逻辑
             log_node_info("LORA NOT IN CACHE", f"{name}")
-            loras = folder_paths.get_filename_list("loras")
+            loras = folder_paths.get_filename_list(context, "loras")
             for x in loras:
                 if x.endswith(name):
                     self.lora_name_cache.append(x)
@@ -425,7 +426,7 @@ class easyLoader:
 
             return None
 
-    def load_main(self, ckpt_name, config_name, vae_name, lora_name, lora_model_strength, lora_clip_strength, optional_lora_stack, model_override, clip_override, vae_override, prompt, nf4=False):
+    def load_main(self, context: execution_context.ExecutionContext, ckpt_name, config_name, vae_name, lora_name, lora_model_strength, lora_clip_strength, optional_lora_stack, model_override, clip_override, vae_override, prompt, nf4=False):
         model: ModelPatcher | None = None
         clip: comfy.sd.CLIP | None = None
         vae: comfy.sd.VAE | None = None
@@ -443,7 +444,7 @@ class easyLoader:
             node = prompt[xy_model_id]
             if "ckpt_name_1" in node["inputs"]:
                 ckpt_name_1 = node["inputs"]["ckpt_name_1"]
-                model, clip, vae, clip_vision = self.load_checkpoint(ckpt_name_1)
+                model, clip, vae, clip_vision = self.load_checkpoint(context, ckpt_name_1)
                 can_load_lora = False
         # Load models
         elif model_override is not None and clip_override is not None and vae_override is not None:
@@ -457,13 +458,13 @@ class easyLoader:
         elif clip_override is not None:
             raise Exception(f"[ERROR] model or vae is missing")
         else:
-            model, clip, vae, clip_vision = self.load_checkpoint(ckpt_name, config_name)
+            model, clip, vae, clip_vision = self.load_checkpoint(context, ckpt_name, config_name)
 
         if optional_lora_stack is not None and can_load_lora:
             for lora in optional_lora_stack:
                 lora = {"lora_name": lora[0], "model": model, "clip": clip, "model_strength": lora[1],
                         "clip_strength": lora[2]}
-                model, clip = self.load_lora(lora)
+                model, clip = self.load_lora(context, lora)
                 lora['model'] = model
                 lora['clip'] = clip
                 lora_stack.append(lora)
@@ -471,12 +472,12 @@ class easyLoader:
         if lora_name != "None" and can_load_lora:
             lora = {"lora_name": lora_name, "model": model, "clip": clip, "model_strength": lora_model_strength,
                     "clip_strength": lora_clip_strength}
-            model, clip = self.load_lora(lora)
+            model, clip = self.load_lora(context, lora)
             lora_stack.append(lora)
 
         # Check for custom VAE
         if vae_name not in ["Baked VAE", "Baked-VAE"]:
-            vae = self.load_vae(vae_name)
+            vae = self.load_vae(context, vae_name)
         # CLIP skip
         if not clip:
             raise Exception("No CLIP found")
@@ -484,14 +485,14 @@ class easyLoader:
         return model, clip, vae, clip_vision, lora_stack
 
     # Kolors
-    def load_kolors_unet(self, unet_name):
+    def load_kolors_unet(self, unet_name, context: execution_context.ExecutionContext):
         if unet_name in self.loaded_objects["unet"]:
             log_node_info("Load Kolors UNet", f"{unet_name} cached")
             return self.loaded_objects["unet"][unet_name][0]
         else:
             from ..kolors.loader import applyKolorsUnet
             with applyKolorsUnet():
-                unet_path = folder_paths.get_full_path("unet", unet_name)
+                unet_path = folder_paths.get_full_path(context, "unet", unet_name)
                 sd = comfy.utils.load_torch_file(unet_path)
                 model = comfy.sd.load_unet_state_dict(sd)
                 if model is None:
@@ -502,13 +503,13 @@ class easyLoader:
 
                 return model
 
-    def load_chatglm3(self, chatglm3_name):
+    def load_chatglm3(self, chatglm3_name, context: execution_context.ExecutionContext):
         from ..kolors.loader import load_chatglm3
         if chatglm3_name in self.loaded_objects["chatglm3"]:
             log_node_info("Load ChatGLM3", f"{chatglm3_name} cached")
             return self.loaded_objects["chatglm3"][chatglm3_name][0]
 
-        chatglm_model = load_chatglm3(model_path=folder_paths.get_full_path("llm", chatglm3_name))
+        chatglm_model = load_chatglm3(model_path=folder_paths.get_full_path(context, "llm", chatglm3_name))
         self.add_to_cache("chatglm3", chatglm3_name, chatglm_model)
         self.eviction_based_on_memory()
 
@@ -520,7 +521,7 @@ class easyLoader:
         if (ckpt_name+'_'+model_name) in self.loaded_objects["ckpt"]:
             return self.loaded_objects["ckpt"][ckpt_name+'_'+model_name][0]
         model = None
-        ckpt_path = folder_paths.get_full_path("checkpoints", ckpt_name)
+        ckpt_path = folder_paths.get_full_path(kwargs["context"], "checkpoints", ckpt_name)
         model_type = kwargs['model_type'] if "model_type" in kwargs else 'PixArt'
         if model_type == 'PixArt':
             pixart_conf = kwargs['pixart_conf']
@@ -536,7 +537,7 @@ class easyLoader:
         if clip_name in self.loaded_objects["clip"]:
             return self.loaded_objects["clip"][clip_name][0]
 
-        clip_path = folder_paths.get_full_path("clip", clip_name)
+        clip_path = folder_paths.get_full_path(kwargs["context"], "clip", clip_name)
         sd = comfy.utils.load_torch_file(clip_path)
 
         prefix = "bert."
@@ -564,7 +565,7 @@ class easyLoader:
         if model_type == 'HyDiT':
             del kwargs['model_type']
             model = EXM_HyDiT_Tenc_Temp(model_class="mT5", **kwargs)
-        t5_path = folder_paths.get_full_path("t5", t5_name)
+        t5_path = folder_paths.get_full_path(kwargs["context"], "t5", t5_name)
         sd = comfy.utils.load_torch_file(t5_path)
         m, e = model.load_sd(sd)
         if len(m) > 0 or len(e) > 0:
