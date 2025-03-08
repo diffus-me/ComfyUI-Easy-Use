@@ -14,6 +14,9 @@ try:
 except:
     FluxGuidance = None
 
+
+import execution_context
+
 class easyXYPlot():
 
     def __init__(self, xyPlotData, save_prefix, image_output, prompt, extra_pnginfo, my_unique_id, sampler, easyCache):
@@ -156,7 +159,7 @@ class easyXYPlot():
                     self.y_type != "None")
         bg_height = self.num_rows * (self.max_height + self.grid_spacing) - self.grid_spacing + border_size * (
                     self.x_type != "None")
-        
+
         # Add space at the bottom of the image for common informaiton about the image
         bg_height = bg_height + (border_size*2)
 #        print(f"Grid Size: width = {bg_width} height = {bg_height} border_size = {border_size}")
@@ -188,12 +191,12 @@ class easyXYPlot():
     def create_label(self, img, text, initial_font_size, is_x_label=True, max_font_size=70, min_font_size=10, label_width=0, label_height=0):
 
         # if the label_width is specified, leave it along.  Otherwise do the old logic.
-        if label_width == 0:          
+        if label_width == 0:
             label_width = img.width if is_x_label else img.height
 
         text_lines = text.split('\n')
         longest_line = max(text_lines, key=len)
-                
+
         # Adjust font size
         font_size = self.adjust_font_size(longest_line, initial_font_size, label_width)
         font_size = min(max_font_size, font_size)  # Ensure font isn't too large
@@ -214,7 +217,7 @@ class easyXYPlot():
             text = text + '...'
 
         # Compute text width and height for multi-line text
-  
+
         text_widths, text_heights = zip(*[self.textsize(d, line, font=font) for line in text_lines])
         max_text_width = max(text_widths)
         total_text_height = sum(text_heights)
@@ -234,7 +237,7 @@ class easyXYPlot():
 
         return label_bg
 
-    def sample_plot_image(self, plot_image_vars, samples, preview_latent, latents_plot, image_list, disable_noise,
+    def sample_plot_image(self, context: execution_context.ExecutionContext, plot_image_vars, samples, preview_latent, latents_plot, image_list, disable_noise,
                           start_step, last_step, force_full_denoise, x_value=None, y_value=None):
         model, clip, vae, positive, negative, seed, steps, cfg = None, None, None, None, None, None, None, None
         sampler_name, scheduler, denoise = None, None, None
@@ -243,7 +246,7 @@ class easyXYPlot():
         clip = clip if clip is not None else plot_image_vars["clip"]
         steps = plot_image_vars['steps'] if "steps" in plot_image_vars else 1
 
-        sd_version = get_sd_version(plot_image_vars['model'])          
+        sd_version = get_sd_version(plot_image_vars['model'])
         # 高级用法
         if plot_image_vars["x_node_type"] == "advanced" or plot_image_vars["y_node_type"] == "advanced":
             if self.x_type == "Seeds++ Batch" or self.y_type == "Seeds++ Batch":
@@ -275,8 +278,8 @@ class easyXYPlot():
             # 模型叠加
             if self.x_type == "ModelMergeBlocks" or self.y_type == "ModelMergeBlocks":
                 ckpt_name_1, ckpt_name_2 = plot_image_vars['models']
-                model1, clip1, vae1, clip_vision = self.easyCache.load_checkpoint(ckpt_name_1)
-                model2, clip2, vae2, clip_vision = self.easyCache.load_checkpoint(ckpt_name_2)
+                model1, clip1, vae1, clip_vision = self.easyCache.load_checkpoint(context, ckpt_name_1)
+                model2, clip2, vae2, clip_vision = self.easyCache.load_checkpoint(context, ckpt_name_2)
                 xy_values = x_value if self.x_type == "ModelMergeBlocks" else y_value
                 if ":" in xy_values:
                     xy_line = xy_values.split(':')
@@ -333,14 +336,14 @@ class easyXYPlot():
                 elif vae_use == 'Use Model 1':
                     vae = vae1
                 else:
-                    vae = self.easyCache.load_vae(vae_use)
+                    vae = self.easyCache.load_vae(context, vae_use)
                 model = m
 
                 # 如果存在lora_stack叠加lora
                 optional_lora_stack = plot_image_vars['lora_stack']
                 if optional_lora_stack is not None and optional_lora_stack != []:
                     for lora in optional_lora_stack:
-                        model, clip = self.easyCache.load_lora(lora)
+                        model, clip = self.easyCache.load_lora(context, lora)
 
                 # 处理clip
                 clip = clip.clone()
@@ -353,9 +356,9 @@ class easyXYPlot():
                 ckpt_name, clip_skip, vae_name = xy_values.split(",")
                 ckpt_name = ckpt_name.replace('*', ',')
                 vae_name = vae_name.replace('*', ',')
-                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(ckpt_name)
+                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(context, ckpt_name)
                 if vae_name != 'None':
-                    vae = self.easyCache.load_vae(vae_name)
+                    vae = self.easyCache.load_vae(context, vae_name)
 
                 # 如果存在lora_stack叠加lora
                 optional_lora_stack = plot_image_vars['lora_stack']
@@ -363,7 +366,7 @@ class easyXYPlot():
                     for lora in optional_lora_stack:
                         lora['model'] = model
                         lora['clip'] = clip
-                        model, clip = self.easyCache.load_lora(lora)
+                        model, clip = self.easyCache.load_lora(context, lora)
 
                 # 处理clip
                 clip = clip.clone()
@@ -397,6 +400,7 @@ class easyXYPlot():
                 xy_values = x_value if self.x_type == "DiffusionModel" else y_value
                 model_name, clip_name, vae_name = xy_values.split(",")
                 model, clip, vae, family = self.easyCache.load_diffusion_xy_model(
+                    context,
                     model_name.replace("*", ","),
                     clip_name.replace("*", ","),
                     vae_name.replace("*", ","),
@@ -419,32 +423,31 @@ class easyXYPlot():
 #                print(f"Lora: {x_value} {y_value}")
                 model = model if model is not None else plot_image_vars["model"]
                 clip = clip if clip is not None else plot_image_vars["clip"]
-                
+
                 # Build lora_stack from both X and Y axes if both are LoRA types
                 lora_stack = []
-                
+
                 # Add X axis LoRA if present
                 if self.x_type == "Lora":
                     lora_name, lora_model_strength, lora_clip_strength, _ = x_value.split(",")
                     lora_stack.append({"lora_name": lora_name, "model": model, "clip": clip, "model_strength": float(lora_model_strength), "clip_strength": float(lora_clip_strength)})
-                
+
                 # Add Y axis LoRA if present
                 if self.y_type == "Lora":
                     lora_name, lora_model_strength, lora_clip_strength, _ = y_value.split(",")
                     lora_stack.append({"lora_name": lora_name, "model": model, "clip": clip, "model_strength": float(lora_model_strength), "clip_strength": float(lora_clip_strength)})
-                
 #                print(f"new_lora_stack: {new_lora_stack}")
 
-                
+
                 if 'lora_stack' in plot_image_vars:
                     lora_stack = lora_stack + plot_image_vars['lora_stack']
-                
+
                 if lora_stack is not None and lora_stack != []:
                     for lora in lora_stack:
                         # Each generation of the model, must use the reference to previously created model / clip objects.
                         lora['model'] = model
                         lora['clip'] = clip
-                        model, clip = self.easyCache.load_lora(lora)
+                        model, clip = self.easyCache.load_lora(context, lora)
 
             # 提示词
             if "Positive" in self.x_type or "Positive" in self.y_type:
@@ -493,7 +496,7 @@ class easyXYPlot():
                         start_percent = item[3]
                         end_percent = item[4]
                         provided_control_net = item[5] if len(item) > 5 else None
-                        positive, negative = easyControlnet().apply(control_net_name, image, positive, negative, strength, start_percent, end_percent, provided_control_net, 1)
+                        positive, negative = easyControlnet().apply(context, control_net_name, image, positive, negative, strength, start_percent, end_percent, provided_control_net, 1)
             # Flux guidance
             if self.x_type == "Flux Guidance" or self.y_type == "Flux Guidance":
                 positive = plot_image_vars["positive_cond"] if "positive" in plot_image_vars else None
@@ -504,30 +507,30 @@ class easyXYPlot():
         if plot_image_vars["x_node_type"] == "loader" or plot_image_vars["y_node_type"] == "loader":
             if self.x_type == 'ckpt_name' or self.y_type == 'ckpt_name':
                 ckpt_name = x_value if self.x_type == "ckpt_name" else y_value
-                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(ckpt_name)
+                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(context, ckpt_name)
 
             if self.x_type == 'lora_name' or self.y_type == 'lora_name':
-                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(plot_image_vars['ckpt_name'])
+                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(context, plot_image_vars['ckpt_name'])
                 lora_name = x_value if self.x_type == "lora_name" else y_value
                 lora = {"lora_name": lora_name, "model": model, "clip": clip, "model_strength": 1, "clip_strength": 1}
-                model, clip = self.easyCache.load_lora(lora)
+                model, clip = self.easyCache.load_lora(context, lora)
 
             if self.x_type == 'lora_model_strength' or self.y_type == 'lora_model_strength':
-                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(plot_image_vars['ckpt_name'])
+                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(context, plot_image_vars['ckpt_name'])
                 lora_model_strength = float(x_value) if self.x_type == "lora_model_strength" else float(y_value)
                 lora = {"lora_name": plot_image_vars['lora_name'], "model": model, "clip": clip, "model_strength": lora_model_strength, "clip_strength": plot_image_vars['lora_clip_strength']}
-                model, clip = self.easyCache.load_lora(lora)
+                model, clip = self.easyCache.load_lora(context, lora)
 
             if self.x_type == 'lora_clip_strength' or self.y_type == 'lora_clip_strength':
-                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(plot_image_vars['ckpt_name'])
+                model, clip, vae, clip_vision = self.easyCache.load_checkpoint(context, plot_image_vars['ckpt_name'])
                 lora_clip_strength = float(x_value) if self.x_type == "lora_clip_strength" else float(y_value)
                 lora = {"lora_name": plot_image_vars['lora_name'], "model": model, "clip": clip, "model_strength": plot_image_vars['lora_model_strength'], "clip_strength": lora_clip_strength}
-                model, clip = self.easyCache.load_lora(lora)
+                model, clip = self.easyCache.load_lora(context, lora)
 
             # Check for custom VAE
             if self.x_type == 'vae_name' or self.y_type == 'vae_name':
                 vae_name = x_value if self.x_type == "vae_name" else y_value
-                vae = self.easyCache.load_vae(vae_name)
+                vae = self.easyCache.load_vae(context, vae_name)
 
             # CLIP skip
             if not clip:
@@ -582,7 +585,7 @@ class easyXYPlot():
 
         samples = empty_samples if layer_diffusion_method is not None and empty_samples is not None else samples
         # Sample
-        samples = self.sampler.common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, samples,
+        samples = self.sampler.common_ksampler(context, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, samples,
                                           denoise=denoise, disable_noise=disable_noise, preview_latent=preview_latent,
                                           start_step=start_step, last_step=last_step,
                                           force_full_denoise=force_full_denoise, noise_device=noise_device)
@@ -597,7 +600,7 @@ class easyXYPlot():
         image = vae.decode(latent).cpu()
 
         if self.output_individuals in [True, "True"]:
-            easySave(image, self.save_prefix, self.image_output)
+            easySave(image, self.save_prefix, self.image_output, context)
 
         # Convert the image from tensor to PIL Image and add it to the list
         pil_image = self.sampler.tensor2pil(image)
@@ -637,14 +640,14 @@ class easyXYPlot():
 
         return latent_list[self.latent_id]
 
-    def get_labels_and_sample(self, plot_image_vars, latent_image, preview_latent, start_step, last_step,
+    def get_labels_and_sample(self, context: execution_context.ExecutionContext, plot_image_vars, latent_image, preview_latent, start_step, last_step,
                               force_full_denoise, disable_noise):
         # Handle X-only variation (Y is "None")
         if self.y_type == 'None':
             for x_index, x_value in enumerate(self.x_values):
                 plot_image_vars, x_value_label = self.define_variable(plot_image_vars, self.x_type, x_value, x_index)
                 self.x_label = self.update_label(self.x_label, x_value_label, len(self.x_values))
-                
+
                 self.image_list, self.max_width, self.max_height, self.latents_plot = self.sample_plot_image(
                     plot_image_vars, latent_image, preview_latent, self.latents_plot, self.image_list,
                     disable_noise, start_step, last_step, force_full_denoise, x_value)
@@ -654,8 +657,8 @@ class easyXYPlot():
             for y_index, y_value in enumerate(self.y_values):
                 plot_image_vars, y_value_label = self.define_variable(plot_image_vars, self.y_type, y_value, y_index)
                 self.y_label = self.update_label(self.y_label, y_value_label, len(self.y_values))
-                
-                self.image_list, self.max_width, self.max_height, self.latents_plot = self.sample_plot_image(
+
+                self.image_list, self.max_width, self.max_height, self.latents_plot = self.sample_plot_image(context,
                     plot_image_vars, latent_image, preview_latent, self.latents_plot, self.image_list,
                     disable_noise, start_step, last_step, force_full_denoise, y_value=y_value)
                 self.num += 1
@@ -664,12 +667,12 @@ class easyXYPlot():
             for x_index, x_value in enumerate(self.x_values):
                 plot_image_vars, x_value_label = self.define_variable(plot_image_vars, self.x_type, x_value, x_index)
                 self.x_label = self.update_label(self.x_label, x_value_label, len(self.x_values))
-                
+
                 for y_index, y_value in enumerate(self.y_values):
                     plot_image_vars, y_value_label = self.define_variable(plot_image_vars, self.y_type, y_value, y_index)
                     self.y_label = self.update_label(self.y_label, y_value_label, len(self.y_values))
-                    
-                    self.image_list, self.max_width, self.max_height, self.latents_plot = self.sample_plot_image(
+
+                    self.image_list, self.max_width, self.max_height, self.latents_plot = self.sample_plot_image(context,
                         plot_image_vars, latent_image, preview_latent, self.latents_plot, self.image_list,
                         disable_noise, start_step, last_step, force_full_denoise, x_value, y_value)
                     self.num += 1
@@ -683,7 +686,7 @@ class easyXYPlot():
         return self.latents_plot
 
     def plot_images_and_labels(self, plot_image_vars):
-                    
+
         bg_width, bg_height, x_offset_initial, y_offset = self.calculate_background_dimensions()
 
         background = Image.new('RGBA', (int(bg_width), int(bg_height)), color=(255, 255, 255, 255))
@@ -719,7 +722,7 @@ class easyXYPlot():
 
         # lookup used models in the image
         common_label = ""
-        # Update to add a function to do the heavy lifting. Parameters are plot_image_vars name, label to use, names of the axis, 
+        # Update to add a function to do the heavy lifting. Parameters are plot_image_vars name, label to use, names of the axis,
 
         # pprint.pp(plot_image_vars)
 
@@ -730,17 +733,17 @@ class easyXYPlot():
             {"id": "sampler_name", "id_desc": "sampler", "axis_type" : "Sampler"},
             {"id": "scheduler", "id_desc": '', "axis_type" : "Scheduler"},
             {"id": "steps", "id_desc": '', "axis_type" : "Steps"},
-            {"id": "Flux Guidance", "id_desc": 'guidance', "axis_type" : "Flux Guidance"},     
+            {"id": "Flux Guidance", "id_desc": 'guidance', "axis_type" : "Flux Guidance"},
             {"id": "seed", "id_desc": '', "axis_type" : "Seeds++ Batch"}
         ]
-        
+
         for item in labels:
             # Only add the label if it's not one of the axis
             # print(f"Checking item: {item['id']} axis_type {item['axis_type']} x_type: {self.x_type} y_type: {self.y_type}")
             if self.x_type != item['axis_type'] and self.y_type != item['axis_type']:
                 common_label += self.add_common_label(item['id'], plot_image_vars, item['id_desc'])
         common_label += f"\n"
-                
+
         if plot_image_vars['lora_stack'] is not None and plot_image_vars['lora_stack'] != []:
 #            print(f"lora_stack: {plot_image_vars['lora_stack']}")
             for lora in plot_image_vars['lora_stack']:
@@ -749,9 +752,9 @@ class easyXYPlot():
                 lora_weight = lora['model_strength']
                 if lora_name is not None and len(lora_name) > 0 and lora_weight > 0:
                     common_label += f"LORA: {lora_name} weight: {lora_weight:.2f} \n"
-                    
+
         common_label = common_label.strip()
-        
+
         if len(common_label) > 0:
             label_height = background.height - y_offset
             label_bg = self.create_label(background, common_label, int(48 * background.width / 512), label_width=background.width, label_height=label_height)

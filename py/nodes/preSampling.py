@@ -9,6 +9,8 @@ from ..config import *
 
 from .. import easyCache, sampler
 
+import execution_context
+
 
 # 预采样设置（基础）
 class samplerSettings:
@@ -421,7 +423,7 @@ class samplerCustomSettings:
                 images = image_to_latent
         elif latent is not None:
             if "IP2P" in guider:
-                positive, negative, latent = self.ip2p(pipe['positive'], pipe['negative'], latent=latent)
+                positive, negative, latent = self.ip2p(pipe['positive'], pipe['negative'], vae, pipe["images"], latent=latent)
                 samples = latent
             else:
                 samples = latent
@@ -576,11 +578,11 @@ class cascadeSettings:
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
             {"pipe": ("PIPE_LINE",),
-             "encode_vae_name": (["None"] + folder_paths.get_filename_list("vae"),),
-             "decode_vae_name": (["None"] + folder_paths.get_filename_list("vae"),),
+             "encode_vae_name": (["None"] + folder_paths.get_filename_list(context, "vae"),),
+             "decode_vae_name": (["None"] + folder_paths.get_filename_list(context, "vae"),),
              "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
              "cfg": ("FLOAT", {"default": 4.0, "min": 0.0, "max": 100.0}),
              "sampler_name": (comfy.samplers.KSampler.SAMPLERS, {"default":"euler_ancestral"}),
@@ -592,7 +594,7 @@ class cascadeSettings:
                 "image_to_latent_c": ("IMAGE",),
                 "latent_c": ("LATENT",),
             },
-            "hidden":{"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID"},
+            "hidden":{"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT",},
         }
 
     RETURN_TYPES = ("PIPE_LINE",)
@@ -601,7 +603,8 @@ class cascadeSettings:
     FUNCTION = "settings"
     CATEGORY = "EasyUse/PreSampling"
 
-    def settings(self, pipe, encode_vae_name, decode_vae_name, steps, cfg, sampler_name, scheduler, denoise, seed, model=None, image_to_latent_c=None, latent_c=None, prompt=None, extra_pnginfo=None, my_unique_id=None):
+    def settings(self, pipe, encode_vae_name, decode_vae_name, steps, cfg, sampler_name, scheduler, denoise, seed, model=None, image_to_latent_c=None, latent_c=None, prompt=None, extra_pnginfo=None, my_unique_id=None,
+        context: execution_context.ExecutionContext=None):
         images, samples_c = None, None
         samples = pipe['samples']
         batch_size = pipe["loader_settings"]["batch_size"] if "batch_size" in pipe["loader_settings"] else 1
@@ -611,7 +614,7 @@ class cascadeSettings:
 
         if image_to_latent_c is not None:
             if encode_vae_name != 'None':
-                encode_vae = easyCache.load_vae(encode_vae_name)
+                encode_vae = easyCache.load_vae(context, encode_vae_name)
             else:
                 encode_vae = pipe['vae'][0]
             if "compression" not in pipe["loader_settings"]:

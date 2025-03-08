@@ -10,6 +10,7 @@ from ..libs.wildcards import WildcardProcessor, get_wildcard_list, process
 
 from comfy_api.latest import io
 
+import execution_context
 
 # 正面提示词
 class positivePrompt(io.ComfyNode):
@@ -35,14 +36,14 @@ class positivePrompt(io.ComfyNode):
 class wildcardsPrompt(io.ComfyNode):
 
     @classmethod
-    def define_schema(cls):
+    def define_schema(cls, context: execution_context.ExecutionContext):
         wildcard_list = get_wildcard_list()
         return io.Schema(
             node_id="easy wildcards",
             category="EasyUse/Prompt",
             inputs=[
                 io.String.Input("text", default="", multiline=True, dynamic_prompts=False, placeholder="(Support wildcard)"),
-                io.Combo.Input("Select to add LoRA", options=["Select the LoRA to add to the text"] + folder_paths.get_filename_list("loras")),
+                io.Combo.Input("Select to add LoRA", options=["Select the LoRA to add to the text"] + folder_paths.get_filename_list(context, "loras")),
                 io.Combo.Input("Select to add Wildcard", options=["Select the Wildcard to add to the text"] + wildcard_list),
                 io.Int.Input("seed", default=0, min=0, max=MAX_SEED_NUM),
                 io.Boolean.Input("multiline_mode", default=False),
@@ -83,14 +84,14 @@ class wildcardsPrompt(io.ComfyNode):
 class wildcardsPromptMatrix(io.ComfyNode):
 
     @classmethod
-    def define_schema(cls):
+    def define_schema(cls, context: execution_context.ExecutionContext):
         wildcard_list = get_wildcard_list()
         return io.Schema(
             node_id="easy wildcardsMatrix",
             category="EasyUse/Prompt",
             inputs=[
                 io.String.Input("text", default="", multiline=True, dynamic_prompts=False, placeholder="(Support Lora Block Weight and wildcard)"),
-                io.Combo.Input("Select to add LoRA", options=["Select the LoRA to add to the text"] + folder_paths.get_filename_list("loras")),
+                io.Combo.Input("Select to add LoRA", options=["Select the LoRA to add to the text"] + folder_paths.get_filename_list(context, "loras")),
                 io.Combo.Input("Select to add Wildcard", options=["Select the Wildcard to add to the text"] + wildcard_list),
                 io.Int.Input("offset", default=0, min=0, max=MAX_SEED_NUM, step=1, control_after_generate=True),
                 io.Int.Input("output_limit", default=1, min=-1, step=1, tooltip="Output All Probilities", optional=True),
@@ -315,7 +316,7 @@ class promptLine(io.ComfyNode):
     @classmethod
     def execute(cls, prompt, start_index, max_rows, remove_empty_lines=True, **kwargs):
         lines = prompt.split('\n')
-        
+
         if remove_empty_lines:
             lines = [line for line in lines if line.strip()]
 
@@ -454,7 +455,7 @@ class portraitMaster(io.ComfyNode):
         # Load local
         with open(prompt_path, 'r') as f:
             data = json.load(f)
-        
+
         inputs = []
         # Shot
         inputs.append(io.Combo.Input("shot", options=['-'] + data['shot_list']))
@@ -506,7 +507,7 @@ class portraitMaster(io.ComfyNode):
         inputs.append(io.String.Input("prompt_additional", multiline=True, default=""))
         inputs.append(io.String.Input("prompt_end", multiline=True, default=""))
         inputs.append(io.String.Input("negative_prompt", multiline=True, default=""))
-        
+
         return io.Schema(
             node_id="easy portraitMaster",
             category="EasyUse/Prompt",
@@ -684,14 +685,14 @@ class multiAngle(io.ComfyNode):
             vertical = angle_data.get("vertical", 0)
             zoom = angle_data.get("zoom", 5)
             add_angle_prompt = angle_data.get("add_angle_prompt", True)
-            
+
             # Validate input ranges
             rotate = max(0, min(360, int(rotate)))
             vertical = max(-90, min(90, int(vertical)))
             zoom = max(0.0, min(10.0, float(zoom)))
 
             h_angle = rotate % 360
-            
+
             # Horizontal direction mapping
             h_suffix = "" if add_angle_prompt else " quarter"
             if h_angle < 22.5 or h_angle >= 337.5: h_direction = "front view"
@@ -702,7 +703,7 @@ class multiAngle(io.ComfyNode):
             elif h_angle < 247.5: h_direction = f"back-left{h_suffix} view"
             elif h_angle < 292.5: h_direction = "left side view"
             else: h_direction = f"front-left{h_suffix} view"
-            
+
             # Vertical direction mapping
             if add_angle_prompt:
                 if vertical == -90:
@@ -736,7 +737,7 @@ class multiAngle(io.ComfyNode):
                     v_direction = "top-down perspective, looking straight down at the top of the subject"
                 else:
                     v_direction = "top-down perspective, looking straight down at the top of the subject, face not visible, focus on subject head"
-            
+
             # Distance/zoom mapping
             if add_angle_prompt:
                 if zoom < 2: distance = "extreme wide shot"
@@ -750,15 +751,15 @@ class multiAngle(io.ComfyNode):
                 elif zoom < 6: distance = "medium shot"
                 elif zoom < 8: distance = "close-up"
                 else: distance = "extreme close-up"
-            
+
             # Build prompt
             if add_angle_prompt:
                 prompt = f"{h_direction}, {v_direction}, {distance} (horizontal: {rotate}, vertical: {vertical}, zoom: {zoom:.1f})"
             else:
                 prompt = f"{h_direction} {v_direction} {distance}"
-            
+
             prompts.append(prompt)
-        
+
         return io.NodeOutput(prompts, multi_angle)
 
 

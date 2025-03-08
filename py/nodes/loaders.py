@@ -19,22 +19,24 @@ from ..config import *
 
 from .. import easyCache, sampler
 
+import execution_context
+
 any_type = AlwaysEqualProxy("*")
 # 简易加载器完整
 resolution_strings = [f"{width} x {height} (custom)" if width == 'width' and height == 'height' else f"{width} x {height}" for width, height in BASE_RESOLUTIONS]
 class fullLoader:
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         a1111_prompt_style_default = False
 
         return {"required": {
-            "ckpt_name": (folder_paths.get_filename_list("checkpoints") + ['None'],),
-            "config_name": (["Default", ] + folder_paths.get_filename_list("configs"), {"default": "Default"}),
-            "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
+            "ckpt_name": (folder_paths.get_filename_list(context, "checkpoints") + ['None'],),
+            "config_name": (["Default", ] + folder_paths.get_filename_list(context, "configs"), {"default": "Default"}),
+            "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
             "clip_skip": ("INT", {"default": -2, "min": -24, "max": 0, "step": 1}),
 
-            "lora_name": (["None"] + folder_paths.get_filename_list("loras"),),
+            "lora_name": (["None"] + folder_paths.get_filename_list(context, "loras"),),
             "lora_model_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
 
@@ -54,7 +56,7 @@ class fullLoader:
             "INT", {"default": 1, "min": 1, "max": 4096, "tooltip": "The number of latent images in the batch."})
         },
             "optional": {"model_override": ("MODEL",), "clip_override": ("CLIP",), "vae_override": ("VAE",), "optional_lora_stack": ("LORA_STACK",), "optional_controlnet_stack": ("CONTROL_NET_STACK",), "a1111_prompt_style": ("BOOLEAN", {"default": a1111_prompt_style_default})},
-            "hidden": {"video_length": "INT", "prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"video_length": "INT", "prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE", "CLIP", "CONDITIONING", "CONDITIONING", "LATENT")
@@ -69,7 +71,8 @@ class fullLoader:
                        positive, positive_token_normalization, positive_weight_interpretation,
                        negative, negative_token_normalization, negative_weight_interpretation,
                        batch_size, model_override=None, clip_override=None, vae_override=None, optional_lora_stack=None, optional_controlnet_stack=None, a1111_prompt_style=False, video_length=25, prompt=None,
-                       my_unique_id=None
+                       my_unique_id=None,
+                       context: execution_context.ExecutionContext=None,
                        ):
 
         if ckpt_name == 'None' and model_override is None:
@@ -80,15 +83,15 @@ class fullLoader:
 
         # Load models
         log_node_warn("Loading models...")
-        model, clip, vae, clip_vision, lora_stack = easyCache.load_main(ckpt_name, config_name, vae_name, lora_name, lora_model_strength, lora_clip_strength, optional_lora_stack, model_override, clip_override, vae_override, prompt)
+        model, clip, vae, clip_vision, lora_stack = easyCache.load_main(context, ckpt_name, config_name, vae_name, lora_name, lora_model_strength, lora_clip_strength, optional_lora_stack, model_override, clip_override, vae_override, prompt)
 
         # Create Empty Latent
         model_type = get_sd_version(model)
         samples = sampler.emptyLatent(resolution, empty_latent_width, empty_latent_height, batch_size, model_type=model_type, video_length=video_length)
 
         # Prompt to Conditioning
-        positive_embeddings_final, positive_wildcard_prompt, model, clip = prompt_to_cond('positive', model, clip, clip_skip, lora_stack, positive, positive_token_normalization, positive_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache, model_type=model_type)
-        negative_embeddings_final, negative_wildcard_prompt, model, clip = prompt_to_cond('negative', model, clip, clip_skip, lora_stack, negative, negative_token_normalization, negative_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache, model_type=model_type)
+        positive_embeddings_final, positive_wildcard_prompt, model, clip = prompt_to_cond(context, 'positive', model, clip, clip_skip, lora_stack, positive, positive_token_normalization, positive_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache, model_type=model_type)
+        negative_embeddings_final, negative_wildcard_prompt, model, clip = prompt_to_cond(context, 'negative', model, clip, clip_skip, lora_stack, negative, negative_token_normalization, negative_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache, model_type=model_type)
 
         if negative_embeddings_final is None:
             negative_embeddings_final, = ConditioningZeroOut().zero_out(positive_embeddings_final)
@@ -96,7 +99,7 @@ class fullLoader:
         # Conditioning add controlnet
         if optional_controlnet_stack is not None and len(optional_controlnet_stack) > 0:
             for controlnet in optional_controlnet_stack:
-                positive_embeddings_final, negative_embeddings_final = easyControlnet().apply(controlnet[0], controlnet[5], positive_embeddings_final, negative_embeddings_final, controlnet[1], start_percent=controlnet[2], end_percent=controlnet[3], control_net=None, scale_soft_weights=controlnet[4], mask=None, easyCache=easyCache, use_cache=True, model=model, vae=vae)
+                positive_embeddings_final, negative_embeddings_final = easyControlnet().apply(context, controlnet[0], controlnet[5], positive_embeddings_final, negative_embeddings_final, controlnet[1], start_percent=controlnet[2], end_percent=controlnet[3], control_net=None, scale_soft_weights=controlnet[4], mask=None, easyCache=easyCache, use_cache=True, model=model, vae=vae)
 
         pipe = {
             "model": model,
@@ -136,14 +139,14 @@ class fullLoader:
 # A1111简易加载器
 class a1111Loader(fullLoader):
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         a1111_prompt_style_default = False
-        checkpoints = folder_paths.get_filename_list("checkpoints")
-        loras = ["None"] + folder_paths.get_filename_list("loras")
+        checkpoints = folder_paths.get_filename_list(context, "checkpoints")
+        loras = ["None"] + folder_paths.get_filename_list(context, "loras")
         return {
             "required": {
                 "ckpt_name": (checkpoints,),
-                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
+                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
                 "clip_skip": ("INT", {"default": -2, "min": -24, "max": 0, "step": 1}),
 
                 "lora_name": (loras,),
@@ -163,7 +166,7 @@ class a1111Loader(fullLoader):
                 "optional_controlnet_stack": ("CONTROL_NET_STACK",),
                 "a1111_prompt_style": ("BOOLEAN", {"default": a1111_prompt_style_default}),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -176,7 +179,8 @@ class a1111Loader(fullLoader):
                        lora_name, lora_model_strength, lora_clip_strength,
                        resolution, empty_latent_width, empty_latent_height,
                        positive, negative, batch_size, optional_lora_stack=None, optional_controlnet_stack=None, a1111_prompt_style=False, prompt=None,
-                       my_unique_id=None):
+                       my_unique_id=None,
+                       context: execution_context.ExecutionContext=None):
 
         return super().adv_pipeloader(ckpt_name, 'Default', vae_name, clip_skip,
              lora_name, lora_model_strength, lora_clip_strength,
@@ -184,20 +188,20 @@ class a1111Loader(fullLoader):
              positive, 'mean', 'A1111',
              negative,'mean','A1111',
              batch_size, None, None,  None, optional_lora_stack=optional_lora_stack, optional_controlnet_stack=optional_controlnet_stack,a1111_prompt_style=a1111_prompt_style, prompt=prompt,
-             my_unique_id=my_unique_id
+             my_unique_id=my_unique_id, context=context
         )
 
 # Comfy简易加载器
 class comfyLoader(fullLoader):
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {
             "required": {
-                "ckpt_name": (folder_paths.get_filename_list("checkpoints"),),
-                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
+                "ckpt_name": (folder_paths.get_filename_list(context, "checkpoints"),),
+                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
                 "clip_skip": ("INT", {"default": -2, "min": -24, "max": 0, "step": 1}),
 
-                "lora_name": (["None"] + folder_paths.get_filename_list("loras"),),
+                "lora_name": (["None"] + folder_paths.get_filename_list(context, "loras"),),
                 "lora_model_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                 "lora_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
 
@@ -211,7 +215,7 @@ class comfyLoader(fullLoader):
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 4096, "tooltip": "The number of latent images in the batch."})
             },
             "optional": {"optional_lora_stack": ("LORA_STACK",), "optional_controlnet_stack": ("CONTROL_NET_STACK",),},
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -224,26 +228,27 @@ class comfyLoader(fullLoader):
                        lora_name, lora_model_strength, lora_clip_strength,
                        resolution, empty_latent_width, empty_latent_height,
                        positive, negative, batch_size, optional_lora_stack=None, optional_controlnet_stack=None, prompt=None,
-                      my_unique_id=None):
+                       my_unique_id=None,
+                       context: execution_context.ExecutionContext=None):
         return super().adv_pipeloader(ckpt_name, 'Default', vae_name, clip_skip,
              lora_name, lora_model_strength, lora_clip_strength,
              resolution, empty_latent_width, empty_latent_height,
              positive, 'none', 'comfy',
              negative, 'none', 'comfy',
              batch_size, None, None, None, optional_lora_stack=optional_lora_stack, optional_controlnet_stack=optional_controlnet_stack, a1111_prompt_style=False, prompt=prompt,
-             my_unique_id=my_unique_id
+             my_unique_id=my_unique_id, context=context,
          )
 
 # hydit简易加载器
 class hunyuanDiTLoader(fullLoader):
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {
             "required": {
-                "ckpt_name": (folder_paths.get_filename_list("checkpoints"),),
-                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
+                "ckpt_name": (folder_paths.get_filename_list(context, "checkpoints"),),
+                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
 
-                "lora_name": (["None"] + folder_paths.get_filename_list("loras"),),
+                "lora_name": (["None"] + folder_paths.get_filename_list(context, "loras"),),
                 "lora_model_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                 "lora_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
 
@@ -257,7 +262,7 @@ class hunyuanDiTLoader(fullLoader):
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 64}),
             },
             "optional": {"optional_lora_stack": ("LORA_STACK",), "optional_controlnet_stack": ("CONTROL_NET_STACK",),},
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"}
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -270,7 +275,7 @@ class hunyuanDiTLoader(fullLoader):
                        lora_name, lora_model_strength, lora_clip_strength,
                        resolution, empty_latent_width, empty_latent_height,
                        positive, negative, batch_size, optional_lora_stack=None, optional_controlnet_stack=None, prompt=None,
-                      my_unique_id=None):
+                      my_unique_id=None, context: execution_context.ExecutionContext=None):
 
         return super().adv_pipeloader(ckpt_name, 'Default', vae_name, 0,
              lora_name, lora_model_strength, lora_clip_strength,
@@ -278,7 +283,7 @@ class hunyuanDiTLoader(fullLoader):
              positive, 'none', 'comfy',
              negative, 'none', 'comfy',
              batch_size, None, None, None, optional_lora_stack=optional_lora_stack, optional_controlnet_stack=optional_controlnet_stack, a1111_prompt_style=False, prompt=prompt,
-             my_unique_id=my_unique_id
+             my_unique_id=my_unique_id, context=context,
          )
 
 # stable Cascade
@@ -287,15 +292,15 @@ class cascadeLoader:
         pass
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
 
         return {"required": {
-            "stage_c": (folder_paths.get_filename_list("unet") + folder_paths.get_filename_list("checkpoints"),),
-            "stage_b": (folder_paths.get_filename_list("unet") + folder_paths.get_filename_list("checkpoints"),),
-            "stage_a": (["Baked VAE"]+folder_paths.get_filename_list("vae"),),
-            "clip_name": (["None"] + folder_paths.get_filename_list("clip"),),
+            "stage_c": (folder_paths.get_filename_list(context, "unet") + folder_paths.get_filename_list(context, "checkpoints"),),
+            "stage_b": (folder_paths.get_filename_list(context, "unet") + folder_paths.get_filename_list(context, "checkpoints"),),
+            "stage_a": (["Baked VAE"]+folder_paths.get_filename_list(context, "vae"),),
+            "clip_name": (["None"] + folder_paths.get_filename_list(context, "clip"),),
 
-            "lora_name": (["None"] + folder_paths.get_filename_list("loras"),),
+            "lora_name": (["None"] + folder_paths.get_filename_list(context, "loras"),),
             "lora_model_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
             "lora_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
 
@@ -310,7 +315,7 @@ class cascadeLoader:
             "batch_size": ("INT", {"default": 1, "min": 1, "max": 64}),
         },
             "optional": {"optional_lora_stack": ("LORA_STACK",), },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"}
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "LATENT", "VAE")
@@ -319,9 +324,9 @@ class cascadeLoader:
     FUNCTION = "adv_pipeloader"
     CATEGORY = "EasyUse/Loaders"
 
-    def is_ckpt(self, name):
+    def is_ckpt(self, context: execution_context.ExecutionContext, name):
         is_ckpt = False
-        path = folder_paths.get_full_path("checkpoints", name)
+        path = folder_paths.get_full_path(context, "checkpoints", name)
         if path is not None:
             is_ckpt = True
         return is_ckpt
@@ -329,7 +334,8 @@ class cascadeLoader:
     def adv_pipeloader(self, stage_c, stage_b, stage_a, clip_name, lora_name, lora_model_strength, lora_clip_strength,
                        resolution, empty_latent_width, empty_latent_height, compression,
                        positive, negative, batch_size, optional_lora_stack=None,prompt=None,
-                       my_unique_id=None):
+                       my_unique_id=None,
+                       context:execution_context.ExecutionContext=None):
 
         vae: VAE | None = None
         model_c: ModelPatcher | None = None
@@ -344,21 +350,21 @@ class cascadeLoader:
         # Create Empty Latent
         samples = sampler.emptyLatent(resolution, empty_latent_width, empty_latent_height, batch_size, compression)
 
-        if self.is_ckpt(stage_c):
-            model_c, clip, vae_c, clip_vision = easyCache.load_checkpoint(stage_c)
+        if self.is_ckpt(context, stage_c):
+            model_c, clip, vae_c, clip_vision = easyCache.load_checkpoint(context, stage_c)
         else:
-            model_c = easyCache.load_unet(stage_c)
+            model_c = easyCache.load_unet(context, stage_c)
             vae_c = None
-        if self.is_ckpt(stage_b):
-            model_b, clip, vae_b, clip_vision = easyCache.load_checkpoint(stage_b)
+        if self.is_ckpt(context, stage_b):
+            model_b, clip, vae_b, clip_vision = easyCache.load_checkpoint(context, stage_b)
         else:
-            model_b = easyCache.load_unet(stage_b)
+            model_b = easyCache.load_unet(context, stage_b)
             vae_b = None
 
         if optional_lora_stack is not None and can_load_lora:
             for lora in optional_lora_stack:
                 lora = {"lora_name": lora[0], "model": model_c, "clip": clip, "model_strength": lora[1], "clip_strength": lora[2]}
-                model_c, clip = easyCache.load_lora(lora)
+                model_c, clip = easyCache.load_lora(context, lora)
                 lora['model'] = model_c
                 lora['clip'] = clip
                 pipe_lora_stack.append(lora)
@@ -366,16 +372,16 @@ class cascadeLoader:
         if lora_name != "None" and can_load_lora:
             lora = {"lora_name": lora_name, "model": model_c, "clip": clip, "model_strength": lora_model_strength,
                     "clip_strength": lora_clip_strength}
-            model_c, clip = easyCache.load_lora(lora)
+            model_c, clip = easyCache.load_lora(context, lora)
             pipe_lora_stack.append(lora)
 
         model = (model_c, model_b)
         # Load clip
         if clip_name != 'None':
-            clip = easyCache.load_clip(clip_name, "stable_cascade")
+            clip = easyCache.load_clip(context, clip_name, "stable_cascade")
         # Load vae
         if stage_a not in ["Baked VAE", "Baked-VAE"]:
-            vae_b = easyCache.load_vae(stage_a)
+            vae_b = easyCache.load_vae(context, stage_a)
 
         vae = (vae_c, vae_b)
         # 判断是否连接 styles selector
@@ -461,13 +467,13 @@ except FileNotFoundError:
 class zero123Loader:
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         def get_file_list(filenames):
             return [file for file in filenames if file != "put_models_here.txt" and "zero123" in file.lower()]
 
         return {"required": {
-            "ckpt_name": (get_file_list(folder_paths.get_filename_list("checkpoints")),),
-            "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
+            "ckpt_name": (get_file_list(folder_paths.get_filename_list(context, "checkpoints")),),
+            "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
 
             "init_image": ("IMAGE",),
             "empty_latent_width": ("INT", {"default": 256, "min": 16, "max": MAX_RESOLUTION, "step": 8}),
@@ -478,7 +484,7 @@ class zero123Loader:
             "elevation": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0}),
             "azimuth": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0}),
         },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT",},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -487,7 +493,8 @@ class zero123Loader:
     FUNCTION = "adv_pipeloader"
     CATEGORY = "EasyUse/Loaders"
 
-    def adv_pipeloader(self, ckpt_name, vae_name, init_image, empty_latent_width, empty_latent_height, batch_size, elevation, azimuth, prompt=None, my_unique_id=None):
+    def adv_pipeloader(self, ckpt_name, vae_name, init_image, empty_latent_width, empty_latent_height, batch_size, elevation, azimuth, prompt=None, my_unique_id=None,
+                       context: execution_context.ExecutionContext=None):
         model: ModelPatcher | None = None
         vae: VAE | None = None
         clip: CLIP | None = None
@@ -496,7 +503,7 @@ class zero123Loader:
         # Clean models from loaded_objects
         easyCache.update_loaded_objects(prompt)
 
-        model, clip, vae, clip_vision = easyCache.load_checkpoint(ckpt_name, "Default", True)
+        model, clip, vae, clip_vision = easyCache.load_checkpoint(context, ckpt_name, "Default", True)
 
         output = clip_vision.encode_image(init_image)
         pooled = output.image_embeds.unsqueeze(0)
@@ -544,13 +551,13 @@ class sv3dLoader(EasingBase):
         super().__init__()
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         def get_file_list(filenames):
             return [file for file in filenames if file != "put_models_here.txt" and "sv3d" in file]
 
         return {"required": {
-            "ckpt_name": (get_file_list(folder_paths.get_filename_list("checkpoints")),),
-            "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
+            "ckpt_name": (get_file_list(folder_paths.get_filename_list(context, "checkpoints")),),
+            "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
 
             "init_image": ("IMAGE",),
             "empty_latent_width": ("INT", {"default": 576, "min": 16, "max": MAX_RESOLUTION, "step": 8}),
@@ -561,7 +568,7 @@ class sv3dLoader(EasingBase):
             "easing_mode": (["azimuth", "elevation", "custom"], {"default": "azimuth"}),
         },
             "optional": {"scheduler": ("STRING", {"default": "",  "multiline": True})},
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT",}
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "STRING")
@@ -570,7 +577,8 @@ class sv3dLoader(EasingBase):
     FUNCTION = "adv_pipeloader"
     CATEGORY = "EasyUse/Loaders"
 
-    def adv_pipeloader(self, ckpt_name, vae_name, init_image, empty_latent_width, empty_latent_height, batch_size, interp_easing, easing_mode, scheduler='',prompt=None, my_unique_id=None):
+    def adv_pipeloader(self, ckpt_name, vae_name, init_image, empty_latent_width, empty_latent_height, batch_size, interp_easing, easing_mode, scheduler='',prompt=None, my_unique_id=None,
+                       context: execution_context.ExecutionContext=None):
         model: ModelPatcher | None = None
         vae: VAE | None = None
         clip: CLIP | None = None
@@ -578,7 +586,7 @@ class sv3dLoader(EasingBase):
         # Clean models from loaded_objects
         easyCache.update_loaded_objects(prompt)
 
-        model, clip, vae, clip_vision = easyCache.load_checkpoint(ckpt_name, "Default", True)
+        model, clip, vae, clip_vision = easyCache.load_checkpoint(context, ckpt_name, "Default", True)
 
         output = clip_vision.encode_image(init_image)
         pooled = output.image_embeds.unsqueeze(0)
@@ -693,14 +701,14 @@ class sv3dLoader(EasingBase):
 class svdLoader:
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         def get_file_list(filenames):
             return [file for file in filenames if file != "put_models_here.txt" and "svd" in file.lower()]
 
         return {"required": {
-                "ckpt_name": (get_file_list(folder_paths.get_filename_list("checkpoints")),),
-                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
-                "clip_name": (["None"] + folder_paths.get_filename_list("clip"),),
+                "ckpt_name": (get_file_list(folder_paths.get_filename_list(context, "checkpoints")),),
+                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
+                "clip_name": (["None"] + folder_paths.get_filename_list(context, "clip"),),
 
                 "init_image": ("IMAGE",),
                 "resolution": (resolution_strings, {"default": "1024 x 576"}),
@@ -716,7 +724,7 @@ class svdLoader:
                 "optional_positive": ("STRING", {"default": "", "multiline": True}),
                 "optional_negative": ("STRING", {"default": "", "multiline": True}),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT",}
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -725,7 +733,8 @@ class svdLoader:
     FUNCTION = "adv_pipeloader"
     CATEGORY = "EasyUse/Loaders"
 
-    def adv_pipeloader(self, ckpt_name, vae_name, clip_name, init_image, resolution, empty_latent_width, empty_latent_height, video_frames, motion_bucket_id, fps, augmentation_level, optional_positive=None, optional_negative=None, prompt=None, my_unique_id=None):
+    def adv_pipeloader(self, ckpt_name, vae_name, clip_name, init_image, resolution, empty_latent_width, empty_latent_height, video_frames, motion_bucket_id, fps, augmentation_level, optional_positive=None, optional_negative=None, prompt=None, my_unique_id=None,
+                       context: execution_context.ExecutionContext=None):
         model: ModelPatcher | None = None
         vae: VAE | None = None
         clip: CLIP | None = None
@@ -743,7 +752,7 @@ class svdLoader:
         # Clean models from loaded_objects
         easyCache.update_loaded_objects(prompt)
 
-        model, clip, vae, clip_vision = easyCache.load_checkpoint(ckpt_name, "Default", True)
+        model, clip, vae, clip_vision = easyCache.load_checkpoint(context, ckpt_name, "Default", True)
 
         output = clip_vision.encode_image(init_image)
         pooled = output.image_embeds.unsqueeze(0)
@@ -761,7 +770,7 @@ class svdLoader:
         if optional_positive is not None and optional_positive != '':
             if clip_name == 'None':
                 raise Exception("You need choose a open_clip model when positive is not empty")
-            clip = easyCache.load_clip(clip_name)
+            clip = easyCache.load_clip(context, clip_name)
             if has_chinese(optional_positive):
                 optional_positive = zh_to_en([optional_positive])[0]
             positive_embeddings_final, = CLIPTextEncode().encode(clip, optional_positive)
@@ -810,13 +819,13 @@ from ..modules.kolors.text_encode import chatglm3_adv_text_encode
 class kolorsLoader:
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {
             "required":{
-                "unet_name": (folder_paths.get_filename_list("unet"),),
-                "vae_name": (folder_paths.get_filename_list("vae"),),
-                "chatglm3_name": (folder_paths.get_filename_list("llm"),),
-                "lora_name": (["None"] + folder_paths.get_filename_list("loras"),),
+                "unet_name": (folder_paths.get_filename_list(context, "unet"),),
+                "vae_name": (folder_paths.get_filename_list(context, "vae"),),
+                "chatglm3_name": (folder_paths.get_filename_list(context, "llm"),),
+                "lora_name": (["None"] + folder_paths.get_filename_list(context, "loras"),),
                 "lora_model_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                 "lora_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                 "resolution": (resolution_strings, {"default": "1024 x 576"}),
@@ -834,7 +843,7 @@ class kolorsLoader:
                 "optional_lora_stack": ("LORA_STACK",),
                 "auto_clean_gpu": ("BOOLEAN", {"default": False}),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT",}
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -843,26 +852,27 @@ class kolorsLoader:
     FUNCTION = "adv_pipeloader"
     CATEGORY = "EasyUse/Loaders"
 
-    def adv_pipeloader(self, unet_name, vae_name, chatglm3_name, lora_name, lora_model_strength, lora_clip_strength, resolution, empty_latent_width, empty_latent_height, positive, negative, batch_size, model_override=None, optional_lora_stack=None, vae_override=None, auto_clean_gpu=False, prompt=None, my_unique_id=None):
+    def adv_pipeloader(self, unet_name, vae_name, chatglm3_name, lora_name, lora_model_strength, lora_clip_strength, resolution, empty_latent_width, empty_latent_height, positive, negative, batch_size, model_override=None, optional_lora_stack=None, vae_override=None, auto_clean_gpu=False, prompt=None, my_unique_id=None,
+                       context: execution_context.ExecutionContext=None):
         # load unet
         if model_override:
            model = model_override
         else:
-           model = easyCache.load_kolors_unet(unet_name)
+           model = easyCache.load_kolors_unet(context, unet_name)
         # load vae
         if vae_override:
            vae = vae_override
         else:
-           vae = easyCache.load_vae(vae_name)
+           vae = easyCache.load_vae(context, vae_name)
         # load chatglm3
-        chatglm3_model = easyCache.load_chatglm3(chatglm3_name)
+        chatglm3_model = easyCache.load_chatglm3(context, chatglm3_name)
         # load lora
         lora_stack = []
         if optional_lora_stack is not None:
             for lora in optional_lora_stack:
                 lora = {"lora_name": lora[0], "model": model, "clip": None, "model_strength": lora[1],
                         "clip_strength": lora[2]}
-                model, _ = easyCache.load_lora(lora)
+                model, _ = easyCache.load_lora(context, lora)
                 lora['model'] = model
                 lora['clip'] = None
                 lora_stack.append(lora)
@@ -870,7 +880,7 @@ class kolorsLoader:
         if lora_name != "None":
             lora = {"lora_name": lora_name, "model": model, "clip": None, "model_strength": lora_model_strength,
                     "clip_strength": lora_clip_strength}
-            model, _ = easyCache.load_lora(lora)
+            model, _ = easyCache.load_lora(context, lora)
             lora_stack.append(lora)
 
 
@@ -922,13 +932,13 @@ class kolorsLoader:
 # Flux Loader
 class fluxLoader(fullLoader):
     @classmethod
-    def INPUT_TYPES(cls):
-        checkpoints = folder_paths.get_filename_list("checkpoints")
-        loras = ["None"] + folder_paths.get_filename_list("loras")
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
+        checkpoints = folder_paths.get_filename_list(context, "checkpoints")
+        loras = ["None"] + folder_paths.get_filename_list(context, "loras")
         return {
             "required": {
                 "ckpt_name": (checkpoints + ['None'],),
-                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"),),
+                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"),),
                 "lora_name": (loras,),
                 "lora_model_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                 "lora_clip_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
@@ -947,7 +957,7 @@ class fluxLoader(fullLoader):
                 "optional_lora_stack": ("LORA_STACK",),
                 "optional_controlnet_stack": ("CONTROL_NET_STACK",),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"}
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -961,7 +971,7 @@ class fluxLoader(fullLoader):
                     resolution, empty_latent_width, empty_latent_height,
                     positive, batch_size, model_override=None, clip_override=None, vae_override=None, optional_lora_stack=None, optional_controlnet_stack=None,
                     a1111_prompt_style=False, prompt=None,
-                    my_unique_id=None):
+                    my_unique_id=None, context: execution_context.ExecutionContext=None):
 
         if positive == '':
             positive = None
@@ -974,7 +984,7 @@ class fluxLoader(fullLoader):
                                       batch_size, model_override, clip_override, vae_override, optional_lora_stack=optional_lora_stack,
                                       optional_controlnet_stack=optional_controlnet_stack,
                                       a1111_prompt_style=a1111_prompt_style, prompt=prompt,
-                                      my_unique_id=my_unique_id)
+                                      my_unique_id=my_unique_id, context=context)
 
 
 # Dit Loader
@@ -982,20 +992,20 @@ from ..modules.dit.pixArt.config import pixart_conf, pixart_res
 
 class pixArtLoader:
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {
             "required": {
-                "ckpt_name": (folder_paths.get_filename_list("checkpoints"),),
+                "ckpt_name": (folder_paths.get_filename_list(context, "checkpoints"),),
                 "model_name":(list(pixart_conf.keys()),),
-                "vae_name": (folder_paths.get_filename_list("vae"),),
+                "vae_name": (folder_paths.get_filename_list(context, "vae"),),
                 "t5_type": (['sd3'],),
-                "clip_name": (folder_paths.get_filename_list("clip"),),
+                "clip_name": (folder_paths.get_filename_list(context, "clip"),),
                 "padding": ("INT", {"default": 1, "min": 1, "max": 300}),
-                "t5_name": (folder_paths.get_filename_list("t5"),),
+                "t5_name": (folder_paths.get_filename_list(context, "t5"),),
                 "device": (["auto", "cpu", "gpu"], {"default": "cpu"}),
                 "dtype": (["default", "auto (comfy)", "FP32", "FP16", "BF16"],),
 
-                "lora_name": (["None"] + folder_paths.get_filename_list("loras"),),
+                "lora_name": (["None"] + folder_paths.get_filename_list(context, "loras"),),
                 "lora_model_strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
 
                 "ratio": (["custom"] + list(pixart_res["PixArtMS_XL_2"].keys()), {"default":"1.00"}),
@@ -1010,7 +1020,7 @@ class pixArtLoader:
             "optional":{
               "optional_lora_stack": ("LORA_STACK",),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -1018,26 +1028,27 @@ class pixArtLoader:
     FUNCTION = "pixart_pipeloader"
     CATEGORY = "EasyUse/Loaders"
 
-    def pixart_pipeloader(self, ckpt_name, model_name, vae_name, t5_type, clip_name, padding, t5_name, device, dtype, lora_name, lora_model_strength, ratio, empty_latent_width, empty_latent_height, positive, negative, batch_size, optional_lora_stack=None, prompt=None, my_unique_id=None):
+    def pixart_pipeloader(self, ckpt_name, model_name, vae_name, t5_type, clip_name, padding, t5_name, device, dtype, lora_name, lora_model_strength, ratio, empty_latent_width, empty_latent_height, positive, negative, batch_size, optional_lora_stack=None, prompt=None, my_unique_id=None,
+                          context: execution_context.ExecutionContext=None):
         # Clean models from loaded_objects
         easyCache.update_loaded_objects(prompt)
 
         # load checkpoint
         model = easyCache.load_dit_ckpt(ckpt_name=ckpt_name, model_name=model_name, pixart_conf=pixart_conf,
-                                        model_type='PixArt')
+                                        model_type='PixArt', context=context)
         # load vae
-        vae = easyCache.load_vae(vae_name)
+        vae = easyCache.load_vae(context, vae_name)
 
         # load t5
         if t5_type == 'sd3':
-            clip = easyCache.load_clip(clip_name=clip_name,type='sd3')
+            clip = easyCache.load_clip(context, clip_name=clip_name,type='sd3')
             clip = easyCache.load_t5_from_sd3_clip(sd3_clip=clip, padding=padding)
-            lora_stack = None
+            lora_stack = []
             if optional_lora_stack is not None:
                 for lora in optional_lora_stack:
                     lora = {"lora_name": lora[0], "model": model, "clip": clip, "model_strength": lora[1],
                             "clip_strength": lora[2]}
-                    model, _ = easyCache.load_lora(lora, type='PixArt')
+                    model, _ = easyCache.load_lora(context, lora, type='PixArt')
                     lora['model'] = model
                     lora['clip'] = clip
                     lora_stack.append(lora)
@@ -1045,7 +1056,7 @@ class pixArtLoader:
             if lora_name != "None":
                 lora = {"lora_name": lora_name, "model": model, "clip": clip, "model_strength": lora_model_strength,
                         "clip_strength": 1}
-                model, _ = easyCache.load_lora(lora, type='PixArt')
+                model, _ = easyCache.load_lora(context, lora, type='PixArt')
                 lora_stack.append(lora)
 
             positive_embeddings_final, = CLIPTextEncode().encode(clip, positive)
@@ -1104,12 +1115,12 @@ class pixArtLoader:
 # Mochi加载器
 class mochiLoader(fullLoader):
     @classmethod
-    def INPUT_TYPES(cls):
-        checkpoints = folder_paths.get_filename_list("checkpoints")
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
+        checkpoints = folder_paths.get_filename_list(context, "checkpoints")
         return {
             "required": {
                 "ckpt_name": (checkpoints,),
-                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list("vae"), {"default": "mochi_vae.safetensors"}),
+                "vae_name": (["Baked VAE"] + folder_paths.get_filename_list(context, "vae"), {"default": "mochi_vae.safetensors"}),
 
                 "positive": ("STRING", {"default":"", "placeholder": "Positive", "multiline": True}),
                 "negative": ("STRING", {"default":"", "placeholder": "Negative", "multiline": True}),
@@ -1123,7 +1134,7 @@ class mochiLoader(fullLoader):
             "optional": {
                 "model_override": ("MODEL",), "clip_override": ("CLIP",), "vae_override": ("VAE",),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"}
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE")
@@ -1136,7 +1147,7 @@ class mochiLoader(fullLoader):
                        positive, negative,
                        resolution, empty_latent_width, empty_latent_height,
                        length, batch_size, model_override=None, clip_override=None, vae_override=None, optional_lora_stack=None, optional_controlnet_stack=None, a1111_prompt_style=False, prompt=None,
-                       my_unique_id=None):
+                       my_unique_id=None, context: execution_context.ExecutionContext=None):
 
         return super().adv_pipeloader(ckpt_name, 'Default', vae_name, 0,
              "None", 1.0, 1.0,
@@ -1144,7 +1155,7 @@ class mochiLoader(fullLoader):
              positive, 'none', 'comfy',
              negative,'none','comfy',
              batch_size, model_override, clip_override,  vae_override, a1111_prompt_style=False, video_length=length, prompt=prompt,
-             my_unique_id=my_unique_id
+             my_unique_id=my_unique_id, context=context
         )
 # Diffusion model loader
 class diffusionModelLoader:
@@ -1168,7 +1179,7 @@ class diffusionModelLoader:
                 "clip_override": ("CLIP",),
                 "vae_override": ("VAE",),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"},
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "EXEC_CONTEXT": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "VAE", "CLIP", "CONDITIONING", "CONDITIONING", "LATENT")
@@ -1179,9 +1190,11 @@ class diffusionModelLoader:
     def adv_pipeloader(self, model_name, vae_name, clip_name, resolution,
                        empty_latent_width, empty_latent_height, positive, negative,
                        batch_size, model_override=None, clip_override=None,
-                       vae_override=None, prompt=None, my_unique_id=None):
+                       vae_override=None, prompt=None, my_unique_id=None,
+                       exec_context: execution_context.ExecutionContext=None):
         easyCache.update_loaded_objects(prompt)
         model, clip, vae, family = easyCache.load_diffusion_model_required(
+            exec_context,
             model_name, clip_name, vae_name
         )
 
@@ -1233,7 +1246,7 @@ class diffusionModelLoader:
 # lora
 class loraSwitcher:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         max_lora_num = 50
         inputs = {
             "required": {
@@ -1245,11 +1258,14 @@ class loraSwitcher:
             "optional": {
                 "optional_lora_stack": ("LORA_STACK",),
             },
+            "hidden": {
+                "context": "EXECTION_CONTEXT",
+            }
         }
 
         for i in range(1, max_lora_num + 1):
             inputs["optional"][f"lora_{i}_name"] = (
-                ["None"] + folder_paths.get_filename_list("loras"), {"default": "None"})
+                ["None"] + folder_paths.get_filename_list(context, "loras"), {"default": "None"})
 
         return inputs
 
@@ -1259,7 +1275,7 @@ class loraSwitcher:
 
     CATEGORY = "EasyUse/Loaders"
 
-    def stack(self, toggle, select,num_loras, lora_strength, optional_lora_stack=None, **kwargs):     
+    def stack(self, toggle, select, num_loras, lora_strength, optional_lora_stack=None, **kwargs):
         if toggle in [False, None, "False"]:
             return (optional_lora_stack, '')
 
@@ -1289,7 +1305,7 @@ class loraStack:
         pass
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         max_lora_num = 10
         inputs = {
             "required": {
@@ -1304,7 +1320,7 @@ class loraStack:
 
         for i in range(1, max_lora_num+1):
             inputs["optional"][f"lora_{i}_name"] = (
-            ["None"] + folder_paths.get_filename_list("loras"), {"default": "None"})
+            ["None"] + folder_paths.get_filename_list(context, "loras"), {"default": "None"})
             inputs["optional"][f"lora_{i}_strength"] = (
             "FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01})
             inputs["optional"][f"lora_{i}_model_strength"] = (
@@ -1353,7 +1369,7 @@ class controlnetStack:
 
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         max_cn_num = 3
         inputs = {
             "required": {
@@ -1367,7 +1383,7 @@ class controlnetStack:
         }
 
         for i in range(1, max_cn_num+1):
-            inputs["optional"][f"controlnet_{i}"] = (["None"] + folder_paths.get_filename_list("controlnet"), {"default": "None"})
+            inputs["optional"][f"controlnet_{i}"] = (["None"] + folder_paths.get_filename_list(context, "controlnet"), {"default": "None"})
             inputs["optional"][f"controlnet_{i}_strength"] = ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01},)
             inputs["optional"][f"start_percent_{i}"] = ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001},)
             inputs["optional"][f"end_percent_{i}"] = ("FLOAT",{"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001},)
@@ -1412,18 +1428,21 @@ class controlnetStack:
 # controlnet
 class controlnetSimple:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
 
         return {
             "required": {
                 "pipe": ("PIPE_LINE",),
                 "image": ("IMAGE",),
-                "control_net_name": (folder_paths.get_filename_list("controlnet"),),
+                "control_net_name": (folder_paths.get_filename_list(context, "controlnet"),),
             },
             "optional": {
                 "control_net": ("CONTROL_NET",),
                 "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01}),
                 "scale_soft_weights": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001},),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -1433,9 +1452,9 @@ class controlnetSimple:
     FUNCTION = "controlnetApply"
     CATEGORY = "EasyUse/Loaders"
 
-    def controlnetApply(self, pipe, image, control_net_name, control_net=None, strength=1, scale_soft_weights=1, union_type=None):
+    def controlnetApply(self, pipe, image, control_net_name, control_net=None, strength=1, scale_soft_weights=1, union_type=None, context: execution_context.ExecutionContext=None):
 
-        positive, negative = easyControlnet().apply(control_net_name, image, pipe["positive"], pipe["negative"], strength, 0, 1, control_net, scale_soft_weights, mask=None, easyCache=easyCache, model=pipe['model'], vae=pipe['vae'])
+        positive, negative = easyControlnet().apply(context, control_net_name, image, pipe["positive"], pipe["negative"], strength, 0, 1, control_net, scale_soft_weights, mask=None, easyCache=easyCache, model=pipe['model'], vae=pipe['vae'])
 
         new_pipe = {
             "model": pipe['model'],
@@ -1458,13 +1477,13 @@ class controlnetSimple:
 class controlnetAdvanced:
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
 
         return {
             "required": {
                 "pipe": ("PIPE_LINE",),
                 "image": ("IMAGE",),
-                "control_net_name": (folder_paths.get_filename_list("controlnet"),),
+                "control_net_name": (folder_paths.get_filename_list(context, "controlnet"),),
             },
             "optional": {
                 "control_net": ("CONTROL_NET",),
@@ -1472,6 +1491,9 @@ class controlnetAdvanced:
                 "start_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "end_percent": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "scale_soft_weights": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001},),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -1482,8 +1504,8 @@ class controlnetAdvanced:
     CATEGORY = "EasyUse/Loaders"
 
 
-    def controlnetApply(self, pipe, image, control_net_name, control_net=None, strength=1, start_percent=0, end_percent=1, scale_soft_weights=1):
-        positive, negative = easyControlnet().apply(control_net_name, image, pipe["positive"], pipe["negative"],
+    def controlnetApply(self, pipe, image, control_net_name, control_net=None, strength=1, start_percent=0, end_percent=1, scale_soft_weights=1, context: execution_context.ExecutionContext=None):
+        positive, negative = easyControlnet().apply(context, control_net_name, image, pipe["positive"], pipe["negative"],
                                                     strength, start_percent, end_percent, control_net, scale_soft_weights, union_type=None, mask=None, easyCache=easyCache, model=pipe['model'], vae=pipe['vae'])
 
         new_pipe = {
@@ -1508,13 +1530,13 @@ class controlnetAdvanced:
 class controlnetPlusPlus:
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
 
         return {
             "required": {
                 "pipe": ("PIPE_LINE",),
                 "image": ("IMAGE",),
-                "control_net_name": (folder_paths.get_filename_list("controlnet"),),
+                "control_net_name": (folder_paths.get_filename_list(context, "controlnet"),),
             },
             "optional": {
                 "control_net": ("CONTROL_NET",),
@@ -1523,6 +1545,9 @@ class controlnetPlusPlus:
                 "end_percent": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "scale_soft_weights": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001},),
                 "union_type": (list(union_controlnet_types.keys()),)
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -1533,7 +1558,7 @@ class controlnetPlusPlus:
     CATEGORY = "EasyUse/Loaders"
 
 
-    def controlnetApply(self, pipe, image, control_net_name, control_net=None, strength=1, start_percent=0, end_percent=1, scale_soft_weights=1, union_type=None):
+    def controlnetApply(self, pipe, image, control_net_name, control_net=None, strength=1, start_percent=0, end_percent=1, scale_soft_weights=1, union_type=None, context: execution_context.ExecutionContext=None):
         if scale_soft_weights < 1:
             if "ScaledSoftControlNetWeights" in ALL_NODE_CLASS_MAPPINGS:
                 soft_weight_cls = ALL_NODE_CLASS_MAPPINGS['ScaledSoftControlNetWeights']
@@ -1552,7 +1577,7 @@ class controlnetPlusPlus:
                 raise Exception(
                     f"[Advanced-ControlNet Not Found] you need to install 'COMFYUI-Advanced-ControlNet'")
         else:
-            positive, negative = easyControlnet().apply(control_net_name, image, pipe["positive"], pipe["negative"],
+            positive, negative = easyControlnet().apply(context, control_net_name, image, pipe["positive"], pipe["negative"],
                                                         strength, start_percent, end_percent, control_net, scale_soft_weights, union_type=union_type, mask=None, easyCache=easyCache, model=pipe['model'])
 
         new_pipe = {
@@ -1579,19 +1604,22 @@ class LLLiteLoader:
     def __init__(self):
         pass
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         def get_file_list(filenames):
             return [file for file in filenames if file != "put_models_here.txt" and "lllite" in file]
 
         return {
             "required": {
                 "model": ("MODEL",),
-                "model_name": (get_file_list(folder_paths.get_filename_list("controlnet")),),
+                "model_name": (get_file_list(folder_paths.get_filename_list(context, "controlnet")),),
                 "cond_image": ("IMAGE",),
                 "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01}),
                 "steps": ("INT", {"default": 0, "min": 0, "max": 200, "step": 1}),
                 "start_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1}),
                 "end_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1}),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -1599,10 +1627,10 @@ class LLLiteLoader:
     FUNCTION = "load_lllite"
     CATEGORY = "EasyUse/Loaders"
 
-    def load_lllite(self, model, model_name, cond_image, strength, steps, start_percent, end_percent):
+    def load_lllite(self, model, model_name, cond_image, strength, steps, start_percent, end_percent, context: execution_context.ExecutionContext):
         # cond_image is b,h,w,3, 0-1
 
-        model_path = os.path.join(folder_paths.get_full_path("controlnet", model_name))
+        model_path = os.path.join(folder_paths.get_full_path(context, "controlnet", model_name))
 
         model_lllite = model.clone()
         patch = load_control_net_lllite_patch(model_path, cond_image, strength, steps, start_percent, end_percent)

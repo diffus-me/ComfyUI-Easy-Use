@@ -1,5 +1,7 @@
 import os
 import re
+
+import execution_context
 import folder_paths
 import json
 from ..libs.utils import AlwaysEqualProxy
@@ -78,9 +80,9 @@ class sliderControl:
 
 class setCkptName:
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required": {
-                "ckpt_name": (folder_paths.get_filename_list("checkpoints"),),
+                "ckpt_name": (folder_paths.get_filename_list(context, "checkpoints"),),
             }
         }
 
@@ -95,9 +97,9 @@ class setCkptName:
 class setControlName:
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required": {
-                "controlnet_name": (folder_paths.get_filename_list("controlnet"),),
+                "controlnet_name": (folder_paths.get_filename_list(context, "controlnet"),),
             }
         }
 
@@ -112,9 +114,9 @@ class setControlName:
 class setLoraName:
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required": {
-                "lora_name": (folder_paths.get_filename_list("loras"),),
+                "lora_name": (folder_paths.get_filename_list(context, "loras"),),
             }
         }
 

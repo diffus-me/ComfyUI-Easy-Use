@@ -9,6 +9,8 @@ from PIL import Image
 from typing import Dict, List, Optional, Tuple, Union, Any
 from ..modules.brushnet.model_patch import add_model_patch
 
+import execution_context
+
 class easySampler:
     def __init__(self):
         self.last_helds: dict[str, list] = {
@@ -189,9 +191,10 @@ class easySampler:
         noises = torch.cat(noises, axis=0)
         return noises
 
-    def common_ksampler(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0,
+    def common_ksampler(self, context: execution_context.ExecutionContext, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0,
                         disable_noise=False, start_step=None, last_step=None, force_full_denoise=False,
-                        preview_latent=True, disable_pbar=False, noise_device='CPU'):
+                        preview_latent=True, disable_pbar=False, noise_device='CPU',
+                        ):
         device = comfy.model_management.get_torch_device()
         noise_device = 'cpu' if noise_device == 'CPU' else device
         latent_image = latent["samples"]
@@ -208,7 +211,7 @@ class easySampler:
         previewer = False
 
         if preview_latent:
-            previewer = latent_preview.get_previewer(device, model.model.latent_format)
+            previewer = latent_preview.get_previewer(context, device, model.model.latent_format)
 
         pbar = comfy.utils.ProgressBar(steps)
 
@@ -241,7 +244,8 @@ class easySampler:
         out["samples"] = samples
         return out
 
-    def custom_ksampler(self, model, seed, steps, cfg, _sampler, sigmas, positive, negative, latent,
+    def custom_ksampler(self, context: execution_context.ExecutionContext,
+                        model, seed, steps, cfg, _sampler, sigmas, positive, negative, latent,
                         disable_noise=False, preview_latent=True,  disable_pbar=False, noise_device='CPU'):
 
         device = comfy.model_management.get_torch_device()
@@ -266,7 +270,7 @@ class easySampler:
         previewer = False
 
         if preview_latent:
-            previewer = latent_preview.get_previewer(device, model.model.latent_format)
+            previewer = latent_preview.get_previewer(context, device, model.model.latent_format)
 
         pbar = comfy.utils.ProgressBar(steps)
 
@@ -283,7 +287,7 @@ class easySampler:
         out["samples"] = samples
         return out
 
-    def custom_advanced_ksampler(self, guider, sampler, sigmas, latent_image, add_noise='enable', seed=0, preview_latent=False):
+    def custom_advanced_ksampler(self, context: execution_context.ExecutionContext, guider, sampler, sigmas, latent_image, add_noise='enable', seed=0, preview_latent=False, ):
         latent = latent_image
         latent_image = latent["samples"]
         latent = latent.copy()
@@ -309,7 +313,7 @@ class easySampler:
         model = guider.model_patcher
         steps = sigmas.shape[-1] - 1
         if preview_latent:
-            previewer = latent_preview.get_previewer(model.load_device, model.model.latent_format)
+            previewer = latent_preview.get_previewer(context, model.load_device, model.model.latent_format)
 
         pbar = comfy.utils.ProgressBar(steps)
 

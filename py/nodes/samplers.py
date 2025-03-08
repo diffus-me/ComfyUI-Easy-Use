@@ -19,10 +19,12 @@ from ..libs.xyplot import easyXYPlot
 
 from .. import easyCache, sampler
 
+import execution_context
+
 class samplerFull:
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
@@ -47,7 +49,8 @@ class samplerFull:
                 },
                 "hidden":
                   {"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXECUTION_CONTEXT"
                   }
                 }
 
@@ -241,7 +244,8 @@ class samplerFull:
 
         return (_guider, _sampler, sigmas)
 
-    def run(self, pipe, steps, cfg, sampler_name, scheduler, denoise, image_output, link_id, save_prefix, seed=None, model=None, positive=None, negative=None, latent=None, vae=None, clip=None, xyPlot=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False, downscale_options=None, image=None):
+    def run(self, pipe, steps, cfg, sampler_name, scheduler, denoise, image_output, link_id, save_prefix, seed=None, model=None, positive=None, negative=None, latent=None, vae=None, clip=None, xyPlot=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False, downscale_options=None, image=None,
+            context: execution_context.ExecutionContext=None):
 
         samp_model = model if model is not None else pipe["model"]
         samp_positive = positive if positive is not None else pipe["positive"]
@@ -343,17 +347,17 @@ class samplerFull:
             # 开始推理
             if samp_custom is not None:
                 _guider, _sampler, sigmas = self.get_sampler_custom(samp_model, samp_positive, samp_negative, samp_custom)
-                samp_samples, samp_blend_samples = sampler.custom_advanced_ksampler(_guider, _sampler, sigmas, samp_samples, add_noise, samp_seed, preview_latent=preview_latent)
+                samp_samples, samp_blend_samples = sampler.custom_advanced_ksampler(context, _guider, _sampler, sigmas, samp_samples, add_noise, samp_seed, preview_latent=preview_latent)
             elif scheduler == 'align_your_steps':
                 sigmas = self.get_align_your_steps_sigmas(samp_model, steps, denoise)
                 _sampler = comfy.samplers.sampler_object(sampler_name)
-                samp_samples = sampler.custom_ksampler(samp_model, samp_seed, steps, cfg, _sampler, sigmas, samp_positive, samp_negative, samp_samples, disable_noise=disable_noise, preview_latent=preview_latent, noise_device=noise_device)
+                samp_samples = sampler.custom_ksampler(context, samp_model, samp_seed, steps, cfg, _sampler, sigmas, samp_positive, samp_negative, samp_samples, disable_noise=disable_noise, preview_latent=preview_latent, noise_device=noise_device)
             elif scheduler == 'gits':
                 sigmas, = gitsScheduler().get_sigmas(coeff=1.2, steps=steps, denoise=denoise)
                 _sampler = comfy.samplers.sampler_object(sampler_name)
-                samp_samples = sampler.custom_ksampler(samp_model, samp_seed, steps, cfg, _sampler, sigmas, samp_positive, samp_negative, samp_samples, disable_noise=disable_noise, preview_latent=preview_latent, noise_device=noise_device)
+                samp_samples = sampler.custom_ksampler(context, samp_model, samp_seed, steps, cfg, _sampler, sigmas, samp_positive, samp_negative, samp_samples, disable_noise=disable_noise, preview_latent=preview_latent, noise_device=noise_device)
             else:
-                samp_samples = sampler.common_ksampler(samp_model, samp_seed, steps, cfg, sampler_name, scheduler, samp_positive, samp_negative, samp_samples, denoise=denoise, preview_latent=preview_latent, start_step=start_step, last_step=last_step, force_full_denoise=force_full_denoise, disable_noise=disable_noise, noise_device=noise_device)
+                samp_samples = sampler.common_ksampler(context, samp_model, samp_seed, steps, cfg, sampler_name, scheduler, samp_positive, samp_negative, samp_samples, denoise=denoise, preview_latent=preview_latent, start_step=start_step, last_step=last_step, force_full_denoise=force_full_denoise, disable_noise=disable_noise, noise_device=noise_device)
             # 推理结束时间
             end_time = int(time.time() * 1000)
             latent = samp_samples["samples"]
@@ -380,7 +384,7 @@ class samplerFull:
                 end_decode_time = int(time.time() * 1000)
                 spent_time = 'Diffusion:' + str((end_time-start_time)/1000)+'″, VAEDecode:' + str((end_decode_time-end_time)/1000)+'″ '
 
-                results = easySave(new_images, save_prefix, image_output, prompt, extra_pnginfo)
+                results = easySave(new_images, save_prefix, image_output, prompt, extra_pnginfo, context=context)
 
             new_pipe = {
                 **pipe,
@@ -489,7 +493,7 @@ class samplerFull:
                 plot_image_vars["empty_samples"] = pipe["loader_settings"]['empty_samples']
 
             latent_image = sampleXYplot.get_latent(pipe["samples"])
-            latents_plot = sampleXYplot.get_labels_and_sample(plot_image_vars, latent_image, preview_latent, start_step,
+            latents_plot = sampleXYplot.get_labels_and_sample(context, plot_image_vars, latent_image, preview_latent, start_step,
                                                               last_step, force_full_denoise, disable_noise)
 
             samp_samples = {"samples": latents_plot}
@@ -508,7 +512,7 @@ class samplerFull:
                 samp_images = output_images
                 alpha = None
 
-            results = easySave(images, save_prefix, image_output, prompt, extra_pnginfo)
+            results = easySave(images, save_prefix, image_output, prompt, extra_pnginfo, context=context)
 
             new_pipe = {
                 **pipe,
@@ -572,7 +576,7 @@ class samplerFull:
 class samplerSimple(samplerFull):
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "image_output": (["Hide", "Preview", "Save", "Hide&Save", "Sender", "Sender&Save", "None"],{"default": "Preview"}),
@@ -584,7 +588,8 @@ class samplerSimple(samplerFull):
                 },
                 "hidden":
                   {"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXECUTION_CONTEXT",
                   }
                 }
 
@@ -595,16 +600,17 @@ class samplerSimple(samplerFull):
     FUNCTION = "simple"
     CATEGORY = "EasyUse/Sampler"
 
-    def simple(self, pipe, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def simple(self, pipe, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+               context: execution_context.ExecutionContext=None):
 
         return super().run(pipe, None, None, None, None, None, image_output, link_id, save_prefix,
                                  None, model, None, None, None, None, None, None,
-                                 None, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise)
+                                 None, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise, context=context)
 
 class samplerSimpleCustom(samplerFull):
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "image_output": (["Hide", "Preview", "Save", "Hide&Save", "Sender", "Sender&Save", "None"],{"default": "None"}),
@@ -616,7 +622,8 @@ class samplerSimpleCustom(samplerFull):
                 },
                 "hidden":
                   {"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXECUTION_CONTEXT",
                   }
                 }
 
@@ -627,11 +634,13 @@ class samplerSimpleCustom(samplerFull):
     FUNCTION = "simple"
     CATEGORY = "EasyUse/Sampler"
 
-    def simple(self, pipe, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def simple(self, pipe, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+               context: execution_context.ExecutionContext=None):
 
         result = super().run(pipe, None, None, None, None, None, image_output, link_id, save_prefix,
                                  None, model, None, None, None, None, None, None,
-                                 None, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise)
+                                 None, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise,
+                                 context=context)
 
         pipe = result["result"][0] if "result" in result else None
 
@@ -644,7 +653,7 @@ class samplerSimpleTiled(samplerFull):
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "tile_size": ("INT", {"default": 512, "min": 320, "max": 4096, "step": 64}),
@@ -657,7 +666,8 @@ class samplerSimpleTiled(samplerFull):
                 },
                 "hidden": {
                     "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXECUTION_CONTEXT",
                   }
                 }
 
@@ -667,11 +677,13 @@ class samplerSimpleTiled(samplerFull):
     FUNCTION = "tiled"
     CATEGORY = "EasyUse/Sampler"
 
-    def tiled(self, pipe, tile_size=512, image_output='preview', link_id=0, save_prefix='ComfyUI', model=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def tiled(self, pipe, tile_size=512, image_output='preview', link_id=0, save_prefix='ComfyUI', model=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+              context: execution_context.ExecutionContext=None):
 
         return super().run(pipe, None, None,None,None,None, image_output, link_id, save_prefix,
                                None, model, None, None, None, None, None, None,
-                               tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise)
+                               tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise,
+                               context=context)
 
 # 简易采样器 (LayerDiffusion)
 class samplerSimpleLayerDiffusion(samplerFull):
@@ -680,7 +692,7 @@ class samplerSimpleLayerDiffusion(samplerFull):
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "image_output": (["Hide", "Preview", "Save", "Hide&Save", "Sender", "Sender&Save"], {"default": "Preview"}),
@@ -692,7 +704,8 @@ class samplerSimpleLayerDiffusion(samplerFull):
                 },
                 "hidden": {
                     "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXECUTION_CONTEXT",
                   }
                 }
 
@@ -703,11 +716,13 @@ class samplerSimpleLayerDiffusion(samplerFull):
     FUNCTION = "layerDiffusion"
     CATEGORY = "EasyUse/Sampler"
 
-    def layerDiffusion(self, pipe, image_output='preview', link_id=0, save_prefix='ComfyUI', model=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def layerDiffusion(self, pipe, image_output='preview', link_id=0, save_prefix='ComfyUI', model=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+                       context: execution_context.ExecutionContext=None):
 
         result = super().run(pipe, None, None,None,None,None, image_output, link_id, save_prefix,
                                None, model, None, None, None, None, None, None,
-                               None, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise)
+                               None, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise,
+                               context=context)
         pipe = result["result"][0] if "result" in result else None
         return ({"ui":result['ui'], "result":(pipe, pipe["images"], pipe["samp_images"], pipe["alpha"])})
 
@@ -717,7 +732,7 @@ class samplerSimpleDownscaleUnet(samplerFull):
     upscale_methods = ["bicubic", "nearest-exact", "bilinear", "area", "bislerp"]
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "downscale_mode": (["None", "Auto", "Custom"],{"default": "Auto"}),
@@ -737,7 +752,8 @@ class samplerSimpleDownscaleUnet(samplerFull):
                 },
                 "hidden":
                   {"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                   "context": "EXECUTION_CONTEXT",
                   }
                 }
 
@@ -748,7 +764,8 @@ class samplerSimpleDownscaleUnet(samplerFull):
     FUNCTION = "downscale_unet"
     CATEGORY = "EasyUse/Sampler"
 
-    def downscale_unet(self, pipe, downscale_mode, block_number, downscale_factor, start_percent, end_percent, downscale_after_skip, downscale_method, upscale_method, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def downscale_unet(self, pipe, downscale_mode, block_number, downscale_factor, start_percent, end_percent, downscale_after_skip, downscale_method, upscale_method, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+                       context: execution_context.ExecutionContext=None):
         downscale_options = None
         if downscale_mode == 'Auto':
             downscale_options = {
@@ -773,11 +790,12 @@ class samplerSimpleDownscaleUnet(samplerFull):
 
         return super().run(pipe, None, None,None,None,None, image_output, link_id, save_prefix,
                                None, model, None, None, None, None, None, None,
-                               tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise, downscale_options)
+                               tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise, downscale_options,
+                               context=context)
 # 简易采样器 (内补)
 class samplerSimpleInpainting(samplerFull):
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "grow_mask_by": ("INT", {"default": 6, "min": 0, "max": 64, "step": 1}),
@@ -792,7 +810,8 @@ class samplerSimpleInpainting(samplerFull):
                 },
                 "hidden":
                   {"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXECUTION_CONTEXT",
                   }
                 }
 
@@ -811,7 +830,7 @@ class samplerSimpleInpainting(samplerFull):
             raise Exception("Differential Diffusion not found,please update comfyui")
         return positive, negative, latent, model
 
-    def get_brushnet_model(self, type, model):
+    def get_brushnet_model(self, context: execution_context.ExecutionContext, type, model):
         model_type = 'sdxl' if isinstance(model.model.model_config, comfy.supported_models.SDXL) else 'sd1'
         if type == 'random':
             brush_model = BRUSHNET_MODELS['random_mask'][model_type]['model_url']
@@ -827,7 +846,7 @@ class samplerSimpleInpainting(samplerFull):
                 pattern = 'brushnet.segmentation.mask.*.(safetensors|bin)$'
 
 
-        brushfile = [e for e in folder_paths.get_filename_list('inpaint') if re.search(pattern, e, re.IGNORECASE)]
+        brushfile = [e for e in folder_paths.get_filename_list(context, 'inpaint') if re.search(pattern, e, re.IGNORECASE)]
         brushname = brushfile[0] if brushfile else None
         if not brushname:
             from urllib.parse import urlparse
@@ -845,7 +864,8 @@ class samplerSimpleInpainting(samplerFull):
         m, positive, negative, latent = cls().model_update(model=model, vae=vae, image=image, mask=mask, brushnet=brushnet, positive=positive, negative=negative, scale=scale, start_at=start_at, end_at=end_at)
         return m, positive, negative, latent
 
-    def inpainting(self, pipe, grow_mask_by, image_output, link_id, save_prefix, additional, model=None, mask=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def inpainting(self, pipe, grow_mask_by, image_output, link_id, save_prefix, additional, model=None, mask=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+                   context: execution_context.ExecutionContext=None):
         _model = model if model is not None else pipe['model']
         latent = pipe['samples'] if 'samples' in pipe else None
         positive = pipe['positive']
@@ -881,23 +901,23 @@ class samplerSimpleInpainting(samplerFull):
             positive, negative, latent, _model = self.dd(_model, positive, negative, images, vae, mask)
         elif additional == 'Brushnet Random':
             mask, = GrowMask().expand_mask(mask, grow_mask_by, False)
-            brush_name = self.get_brushnet_model('random', _model)
+            brush_name = self.get_brushnet_model(context, 'random', _model)
             _model, positive, negative, latent = self.apply_brushnet(brush_name, _model, vae, images, mask, positive,
                                                                      negative)
         elif additional == 'Brushnet Random + DD':
             mask, = GrowMask().expand_mask(mask, grow_mask_by, False)
-            brush_name = self.get_brushnet_model('random', _model)
+            brush_name = self.get_brushnet_model(context, 'random', _model)
             _model, positive, negative, latent = self.apply_brushnet(brush_name, _model, vae, images, mask, positive,
                                                                      negative)
             positive, negative, latent, _model = self.dd(_model, positive, negative, images, vae, mask)
         elif additional == 'Brushnet Segmentation':
             mask, = GrowMask().expand_mask(mask, grow_mask_by, False)
-            brush_name = self.get_brushnet_model('segmentation', _model)
+            brush_name = self.get_brushnet_model(context, 'segmentation', _model)
             _model, positive, negative, latent = self.apply_brushnet(brush_name, _model, vae, images, mask, positive,
                                                                      negative)
         elif additional == 'Brushnet Segmentation + DD':
             mask, = GrowMask().expand_mask(mask, grow_mask_by, False)
-            brush_name = self.get_brushnet_model('segmentation', _model)
+            brush_name = self.get_brushnet_model(context, 'segmentation', _model)
             _model, positive, negative, latent = self.apply_brushnet(brush_name, _model, vae, images, mask, positive,
                                                                      negative)
             positive, negative, latent, _model = self.dd(_model, positive, negative, images, vae, mask)
@@ -906,7 +926,8 @@ class samplerSimpleInpainting(samplerFull):
 
         results = super().run(pipe, None, None,None,None,None, image_output, link_id, save_prefix,
                                None, _model, positive, negative, latent, vae, None, None,
-                               tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise)
+                               tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise,
+                               context=context)
 
         result = results['result']
 
@@ -919,7 +940,7 @@ class samplerSDTurbo:
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                     {"pipe": ("PIPE_LINE",),
                      "image_output": (["Hide", "Preview", "Save", "Hide&Save", "Sender", "Sender&Save"],{"default": "Preview"}),
@@ -932,7 +953,8 @@ class samplerSDTurbo:
                 "hidden":
                     {"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO",
                      "my_unique_id": "UNIQUE_ID",
-                     "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                     "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                     "context": "EXECUTION_CONTEXT"
                      }
                 }
 
@@ -943,7 +965,8 @@ class samplerSDTurbo:
 
     CATEGORY = "EasyUse/Sampler"
 
-    def run(self, pipe, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None,):
+    def run(self, pipe, image_output, link_id, save_prefix, model=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None,
+            context: execution_context.ExecutionContext = None):
         # Clean loaded_objects
         easyCache.update_loaded_objects(prompt)
 
@@ -973,7 +996,7 @@ class samplerSDTurbo:
         # 推理初始时间
         start_time = int(time.time() * 1000)
         # 开始推理
-        samp_samples = sampler.custom_ksampler(samp_model, samp_seed, steps, cfg, samp_sampler, sigmas, samp_positive, samp_negative, samp_samples,
+        samp_samples = sampler.custom_ksampler(context, samp_model, samp_seed, steps, cfg, samp_sampler, sigmas, samp_positive, samp_negative, samp_samples,
                         disable_noise, preview_latent)
         # 推理结束时间
         end_time = int(time.time() * 1000)
@@ -994,7 +1017,7 @@ class samplerSDTurbo:
         # Clean loaded_objects
         easyCache.update_loaded_objects(prompt)
 
-        results = easySave(samp_images, save_prefix, image_output, prompt, extra_pnginfo)
+        results = easySave(samp_images, save_prefix, image_output, prompt, extra_pnginfo, context=context)
         sampler.update_value_by_id("results", my_unique_id, results)
 
         new_pipe = {
@@ -1036,11 +1059,11 @@ class samplerCascadeFull:
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                     {"pipe": ("PIPE_LINE",),
-                     "encode_vae_name": (["None"] + folder_paths.get_filename_list("vae"),),
-                     "decode_vae_name": (["None"] + folder_paths.get_filename_list("vae"),),
+                     "encode_vae_name": (["None"] + folder_paths.get_filename_list(context, "vae"),),
+                     "decode_vae_name": (["None"] + folder_paths.get_filename_list(context, "vae"),),
                      "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
                      "cfg": ("FLOAT", {"default": 4.0, "min": 0.0, "max": 100.0}),
                      "sampler_name": (comfy.samplers.KSampler.SAMPLERS, {"default":"euler_ancestral"}),
@@ -1058,7 +1081,8 @@ class samplerCascadeFull:
                     "model_c": ("MODEL",),
                 },
                  "hidden":{"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXECUTION_CONTEXT"
                   }
                 }
 
@@ -1069,7 +1093,8 @@ class samplerCascadeFull:
     FUNCTION = "run"
     CATEGORY = "EasyUse/Sampler"
 
-    def run(self, pipe, encode_vae_name, decode_vae_name, steps, cfg, sampler_name, scheduler, denoise, image_output, link_id, save_prefix, seed, image_to_latent_c=None, latent_c=None, model_c=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def run(self, pipe, encode_vae_name, decode_vae_name, steps, cfg, sampler_name, scheduler, denoise, image_output, link_id, save_prefix, seed, image_to_latent_c=None, latent_c=None, model_c=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+            context: execution_context.ExecutionContext=None):
 
         encode_vae_name = encode_vae_name if encode_vae_name is not None else pipe['loader_settings']['encode_vae_name']
         decode_vae_name = decode_vae_name if decode_vae_name is not None else pipe['loader_settings']['decode_vae_name']
@@ -1077,7 +1102,7 @@ class samplerCascadeFull:
         batch_size = pipe["loader_settings"]["batch_size"] if "batch_size" in pipe["loader_settings"] else 1
         if image_to_latent_c is not None:
             if encode_vae_name != 'None':
-                encode_vae = easyCache.load_vae(encode_vae_name)
+                encode_vae = easyCache.load_vae(context, encode_vae_name)
             else:
                 encode_vae = pipe['vae'][0]
             if "compression" not in pipe["loader_settings"]:
@@ -1129,7 +1154,8 @@ class samplerCascadeFull:
         # 推理初始时间
         start_time = int(time.time() * 1000)
         # 开始推理
-        samp_samples = sampler.common_ksampler(samp_model, samp_seed, steps, cfg, sampler_name, scheduler,
+        samp_samples = sampler.common_ksampler(context,
+                                               samp_model, samp_seed, steps, cfg, sampler_name, scheduler,
                                                samp_positive, samp_negative, samp_samples, denoise=denoise,
                                                preview_latent=False, start_step=start_step,
                                                last_step=last_step, force_full_denoise=False,
@@ -1141,12 +1167,12 @@ class samplerCascadeFull:
 
         if image_output not in ['Hide', 'Hide&Save']:
             if decode_vae_name != 'None':
-                decode_vae = easyCache.load_vae(decode_vae_name)
+                decode_vae = easyCache.load_vae(context, decode_vae_name)
             else:
                 decode_vae = pipe['vae'][0]
             samp_images = decode_vae.decode(stage_c).cpu()
 
-            results = easySave(samp_images, save_prefix, image_output, prompt, extra_pnginfo)
+            results = easySave(samp_images, save_prefix, image_output, prompt, extra_pnginfo, context=context)
             sampler.update_value_by_id("results", my_unique_id, results)
 
         # 推理总耗时（包含解码）
@@ -1206,10 +1232,11 @@ class samplerCascadeFull:
 class samplerCascadeSimple(samplerCascadeFull):
 
     def __init__(self):
+        super().__init__()
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {"required":
                 {"pipe": ("PIPE_LINE",),
                  "image_output": (["Hide", "Preview", "Save", "Hide&Save", "Sender", "Sender&Save"], {"default": "Preview"}),
@@ -1221,7 +1248,8 @@ class samplerCascadeSimple(samplerCascadeFull):
                 },
                 "hidden":
                   {"tile_size": "INT", "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
-                    "embeddingsList": (folder_paths.get_filename_list("embeddings"),)
+                    "embeddingsList": (folder_paths.get_filename_list(context, "embeddings"),),
+                    "context": "EXEC_CONTEXT",
                   }
                 }
 
@@ -1232,10 +1260,12 @@ class samplerCascadeSimple(samplerCascadeFull):
     FUNCTION = "simple"
     CATEGORY = "EasyUse/Sampler"
 
-    def simple(self, pipe, image_output, link_id, save_prefix, model_c=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False):
+    def simple(self, pipe, image_output, link_id, save_prefix, model_c=None, tile_size=None, prompt=None, extra_pnginfo=None, my_unique_id=None, force_full_denoise=False, disable_noise=False,
+               context: execution_context.ExecutionContext=None):
 
         return super().run(pipe, None, None,None, None,None,None,None, image_output, link_id, save_prefix,
-                               None, None, None, model_c, tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise)
+                               None, None, None, model_c, tile_size, prompt, extra_pnginfo, my_unique_id, force_full_denoise, disable_noise,
+                               context=context)
 
 class unsampler:
     @classmethod
@@ -1255,6 +1285,9 @@ class unsampler:
                 "optional_positive": ("CONDITIONING",),
                 "optional_negative": ("CONDITIONING",),
                 "optional_latent": ("LATENT",),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -1265,7 +1298,7 @@ class unsampler:
     CATEGORY = "EasyUse/Sampler"
 
     def unsampler(self, cfg, sampler_name, steps, end_at_step, scheduler, normalize, pipe=None, optional_model=None, optional_positive=None, optional_negative=None,
-                  optional_latent=None):
+                  optional_latent=None, context: execution_context.ExecutionContext=None):
 
         model = optional_model if optional_model is not None else pipe["model"]
         positive = optional_positive if optional_positive is not None else pipe["positive"]

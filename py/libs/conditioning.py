@@ -6,7 +6,9 @@ from .adv_encode import advanced_encode
 
 from nodes import ConditioningConcat, ConditioningCombine, ConditioningAverage, ConditioningSetTimestepRange, CLIPTextEncode
 
-def prompt_to_cond(type, model, clip, clip_skip, lora_stack, text, prompt_token_normalization, prompt_weight_interpretation, a1111_prompt_style ,my_unique_id, prompt, easyCache, can_load_lora=True, steps=None, model_type=None):
+import execution_context
+
+def prompt_to_cond(context: execution_context.ExecutionContext, type, model, clip, clip_skip, lora_stack, text, prompt_token_normalization, prompt_weight_interpretation, a1111_prompt_style ,my_unique_id, prompt, easyCache, can_load_lora=True, steps=None, model_type=None):
     styles_selector = is_linked_styles_selector(prompt, my_unique_id, type)
     title = "Positive encoding" if type == 'positive' else "Negative encoding"
 
@@ -23,7 +25,7 @@ def prompt_to_cond(type, model, clip, clip_skip, lora_stack, text, prompt_token_
     log_node_warn(title + "...")
 
     positive_seed = find_wildcards_seed(my_unique_id, text, prompt)
-    model, clip, text, cond_decode, show_prompt, pipe_lora_stack = process_with_loras(
+    model, clip, text, cond_decode, show_prompt, pipe_lora_stack = process_with_loras(context,
         text, model, clip, type, positive_seed, can_load_lora, lora_stack, easyCache)
     wildcard_prompt = cond_decode if show_prompt or styles_selector else ""
 

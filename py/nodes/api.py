@@ -129,11 +129,11 @@ class joyCaption3API(joyCaption2API):
     API_URL = f"/supernode/joycaption3"
 
 NODE_CLASS_MAPPINGS = {
-    "easy joyCaption2API": joyCaption2API,
-    "easy joyCaption3API": joyCaption3API,
+    # "easy joyCaption2API": joyCaption2API,
+    # "easy joyCaption3API": joyCaption3API,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "easy joyCaption2API": "JoyCaption2 (BizyAIR)",
-    "easy joyCaption3API": "JoyCaption3 (BizyAIR)",
+    # "easy joyCaption2API": "JoyCaption2 (BizyAIR)",
+    # "easy joyCaption3API": "JoyCaption3 (BizyAIR)",
 }

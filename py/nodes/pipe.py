@@ -11,6 +11,8 @@ from ..libs.conditioning import prompt_to_cond, set_cond
 
 from .. import easyCache
 
+import execution_context
+
 # 节点束输入
 class pipeIn:
     def __init__(self):
@@ -162,7 +164,7 @@ class pipeEdit:
                 "clip": ("CLIP",),
                 "image": ("IMAGE",),
              },
-            "hidden": {"my_unique_id": "UNIQUE_ID", "prompt":"PROMPT"},
+            "hidden": {"my_unique_id": "UNIQUE_ID", "prompt":"PROMPT", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "MODEL", "CONDITIONING", "CONDITIONING", "LATENT", "VAE", "CLIP", "IMAGE")
@@ -171,7 +173,8 @@ class pipeEdit:
 
     CATEGORY = "EasyUse/Pipe"
 
-    def edit(self, clip_skip, optional_positive, positive_token_normalization, positive_weight_interpretation, optional_negative, negative_token_normalization, negative_weight_interpretation, a1111_prompt_style, conditioning_mode, average_strength, old_cond_start, old_cond_end, new_cond_start, new_cond_end, pipe=None, model=None, pos=None, neg=None, latent=None, vae=None, clip=None, image=None, my_unique_id=None, prompt=None):
+    def edit(self, clip_skip, optional_positive, positive_token_normalization, positive_weight_interpretation, optional_negative, negative_token_normalization, negative_weight_interpretation, a1111_prompt_style, conditioning_mode, average_strength, old_cond_start, old_cond_end, new_cond_start, new_cond_end, pipe=None, model=None, pos=None, neg=None, latent=None, vae=None, clip=None, image=None, my_unique_id=None, prompt=None,
+             context: execution_context.ExecutionContext=None):
 
         model = model if model is not None else pipe.get("model")
         if model is None:
@@ -196,7 +199,7 @@ class pipeEdit:
 
         steps = pipe["loader_settings"]["steps"] if "steps" in pipe["loader_settings"] else 1
         if pos is None and optional_positive != '':
-            pos, positive_wildcard_prompt, model, clip = prompt_to_cond('positive', model, clip, clip_skip,
+            pos, positive_wildcard_prompt, model, clip = prompt_to_cond(context, 'positive', model, clip, clip_skip,
                                                                         pipe_lora_stack, optional_positive, positive_token_normalization,positive_weight_interpretation,
                                                                         a1111_prompt_style, my_unique_id, prompt, easyCache, True, steps)
             pos = set_cond(pipe['positive'], pos, conditioning_mode, average_strength, old_cond_start, old_cond_end, new_cond_start, new_cond_end)
@@ -211,7 +214,7 @@ class pipeEdit:
                 log_node_warn(f'pipeIn[{my_unique_id}]', "Pos Conditioning missing from pipeLine")
 
         if neg is None and optional_negative != '':
-            neg, negative_wildcard_prompt, model, clip = prompt_to_cond("negative", model, clip, clip_skip, pipe_lora_stack, optional_negative,
+            neg, negative_wildcard_prompt, model, clip = prompt_to_cond(context, "negative", model, clip, clip_skip, pipe_lora_stack, optional_negative,
                                                       negative_token_normalization, negative_weight_interpretation,
                                                       a1111_prompt_style, my_unique_id, prompt, easyCache, True, steps)
             neg = set_cond(pipe['negative'], neg, conditioning_mode, average_strength, old_cond_start, old_cond_end, new_cond_start, new_cond_end)
@@ -256,7 +259,7 @@ class pipeEditPrompt:
                 "positive": ("STRING", {"default": "", "multiline": True}),
                 "negative": ("STRING", {"default": "", "multiline": True}),
             },
-            "hidden": {"my_unique_id": "UNIQUE_ID", "prompt": "PROMPT"},
+            "hidden": {"my_unique_id": "UNIQUE_ID", "prompt": "PROMPT", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE",)
@@ -265,7 +268,7 @@ class pipeEditPrompt:
 
     CATEGORY = "EasyUse/Pipe"
 
-    def edit(self, pipe, positive, negative, my_unique_id=None, prompt=None):
+    def edit(self, pipe, positive, negative, my_unique_id=None, prompt=None, context: execution_context.ExecutionContext=None):
         model = pipe.get("model")
         if model is None:
             log_node_warn(f'pipeEdit[{my_unique_id}]', "Model missing from pipeLine")
@@ -291,7 +294,8 @@ class pipeEditPrompt:
             negative_weight_interpretation = pipe["loader_settings"]["negative_weight_interpretation"] if "negative_weight_interpretation" in pipe["loader_settings"] else "comfy"
             a1111_prompt_style = pipe["loader_settings"]["a1111_prompt_style"] if "a1111_prompt_style" in pipe["loader_settings"] else False
             # Prompt to Conditioning
-            positive_embeddings_final, positive_wildcard_prompt, model, clip = prompt_to_cond('positive', model, clip,
+            positive_embeddings_final, positive_wildcard_prompt, model, clip = prompt_to_cond(context,
+                                                                                              'positive', model, clip,
                                                                                               clip_skip, lora_stack,
                                                                                               positive,
                                                                                               positive_token_normalization,
@@ -300,7 +304,8 @@ class pipeEditPrompt:
                                                                                               my_unique_id, prompt,
                                                                                               easyCache,
                                                                                               model_type=model_type)
-            negative_embeddings_final, negative_wildcard_prompt, model, clip = prompt_to_cond('negative', model, clip,
+            negative_embeddings_final, negative_wildcard_prompt, model, clip = prompt_to_cond(context,
+                                                                                              'negative', model, clip,
                                                                                               clip_skip, lora_stack,
                                                                                               negative,
                                                                                               negative_token_normalization,
@@ -370,21 +375,25 @@ class pipeBatchIndex:
 
 # pipeXYPlot
 class pipeXYPlot:
-    lora_list = ["None"] + folder_paths.get_filename_list("loras")
+    @staticmethod
+    def lora_list(context: execution_context.ExecutionContext):
+        return ["None"] + folder_paths.get_filename_list(context, "loras")
     lora_strengths = {"min": -4.0, "max": 4.0, "step": 0.01}
     token_normalization = ["none", "mean", "length", "length+mean"]
     weight_interpretation = ["comfy", "A1111", "compel", "comfy++"]
 
-    loader_dict = {
-        "ckpt_name": folder_paths.get_filename_list("checkpoints"),
-        "vae_name": ["Baked-VAE"] + folder_paths.get_filename_list("vae"),
-        "clip_skip": {"min": -24, "max": -1, "step": 1},
-        "lora_name": lora_list,
-        "lora_model_strength": lora_strengths,
-        "lora_clip_strength": lora_strengths,
-        "positive": [],
-        "negative": [],
-    }
+    @staticmethod
+    def loader_dict(context: execution_context.ExecutionContext):
+        return {
+            "ckpt_name": folder_paths.get_filename_list(context, "checkpoints"),
+            "vae_name": ["Baked-VAE"] + folder_paths.get_filename_list(context, "vae"),
+            "clip_skip": {"min": -24, "max": -1, "step": 1},
+            "lora_name": pipeXYPlot.lora_list(context),
+            "lora_model_strength": pipeXYPlot.lora_strengths,
+            "lora_clip_strength": pipeXYPlot.lora_strengths,
+            "positive": [],
+            "negative": [],
+        }
 
     sampler_dict = {
         "steps": {"min": 1, "max": 100, "step": 1},
@@ -395,15 +404,20 @@ class pipeXYPlot:
         "seed": {"min": 0, "max": MAX_SEED_NUM},
     }
 
-    plot_dict = {**sampler_dict, **loader_dict}
+    @staticmethod
+    def plot_dict(context: execution_context.ExecutionContext):
+        return {**pipeXYPlot.sampler_dict, **pipeXYPlot.loader_dict(context)}
 
-    plot_values = ["None", ]
-    plot_values.append("---------------------")
-    for k in sampler_dict:
-        plot_values.append(f'preSampling: {k}')
-    plot_values.append("---------------------")
-    for k in loader_dict:
-        plot_values.append(f'loader: {k}')
+    @staticmethod
+    def plot_values(context: execution_context.ExecutionContext):
+        _plot_values = ["None", ]
+        _plot_values.append("---------------------")
+        for k in pipeXYPlot.sampler_dict:
+            _plot_values.append(f'preSampling: {k}')
+        _plot_values.append("---------------------")
+        for k in pipeXYPlot.loader_dict(context):
+            _plot_values.append(f'loader: {k}')
+        return _plot_values
 
     def __init__(self):
         pass
@@ -411,16 +425,16 @@ class pipeXYPlot:
     rejected = ["None", "---------------------", "Nothing"]
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {
             "required": {
                 "grid_spacing": ("INT", {"min": 0, "max": 500, "step": 5, "default": 0, }),
                 "output_individuals": (["False", "True"], {"default": "False"}),
                 "flip_xy": (["False", "True"], {"default": "False"}),
-                "x_axis": (pipeXYPlot.plot_values, {"default": 'None'}),
+                "x_axis": (pipeXYPlot.plot_values(context), {"default": 'None'}),
                 "x_values": (
                 "STRING", {"default": '', "multiline": True, "placeholder": 'insert values seperated by "; "'}),
-                "y_axis": (pipeXYPlot.plot_values, {"default": 'None'}),
+                "y_axis": (pipeXYPlot.plot_values(context), {"default": 'None'}),
                 "y_values": (
                 "STRING", {"default": '', "multiline": True, "placeholder": 'insert values seperated by "; "'}),
             },
@@ -428,7 +442,7 @@ class pipeXYPlot:
               "pipe": ("PIPE_LINE",)
             },
             "hidden": {
-                "plot_dict": (pipeXYPlot.plot_dict,),
+                "plot_dict": (pipeXYPlot.plot_dict(context),),
             },
         }
 

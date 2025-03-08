@@ -19,6 +19,7 @@ import torch
 import comfy.utils
 import folder_paths
 from comfy_api.latest import io
+import execution_context
 
 DEFAULT_FLOW_NUM = 2
 MAX_FLOW_NUM = 20
@@ -1610,6 +1611,7 @@ class saveText(io.ComfyNode):
 
     @classmethod
     def execute(cls, text, output_file_path, file_name, file_extension, overwrite, image=None, **kwargs):
+        context = kwargs["context"]
         if isinstance(file_name, list):
             file_name = file_name[0]
 
@@ -1620,7 +1622,7 @@ class saveText(io.ComfyNode):
         if file_extension not in ("txt", "csv"):
             raise ValueError("Unsupported text file extension")
 
-        output_dir = folder_paths.get_output_directory()
+        output_dir = folder_paths.get_output_directory(user_hash=context.user_hash)
         filepath = resolve_output_file_path(
             output_dir, output_file_path, file_name, file_extension
         )
@@ -1716,7 +1718,7 @@ NODE_CLASS_MAPPINGS = {
     "easy PassOrNone": PassOrNone,
     "easy isNone": isNone,
     "easy isSDXL": isSDXL,
-    "easy isFileExist": isFileExist,
+    # "easy isFileExist": isFileExist,
     "easy stringToIntList": stringToIntList,
     "easy stringToFloatList": stringToFloatList,
     "easy stringJoinLines": stringJoinLines,
@@ -1732,8 +1734,8 @@ NODE_CLASS_MAPPINGS = {
     "easy clearCacheKey": clearCacheKey,
     "easy clearCacheAll": clearCacheAll,
     "easy cleanGpuUsed": cleanGPUUsed,
-    "easy saveText": saveText,
-    "easy sleep": sleep,
+    # "easy saveText": saveText,
+    # "easy sleep": sleep,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "easy string": "String",
@@ -1766,7 +1768,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "easy PassOrNone": "Pass or None",
     "easy isNone": "Is None",
     "easy isSDXL": "Is SDXL",
-    "easy isFileExist": "Is File Exist",
+    # "easy isFileExist": "Is File Exist",
     "easy stringToIntList": "String to Int List",
     "easy stringToFloatList": "String to Float List",
     "easy stringJoinLines": "String Join Lines",
@@ -1782,6 +1784,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "easy clearCacheKey": "Clear Cache Key",
     "easy clearCacheAll": "Clear Cache All",
     "easy cleanGpuUsed": "Clean VRAM Used",
-    "easy saveText": "Save Text",
-    "easy sleep": "Sleep",
+    # "easy saveText": "Save Text",
+    # "easy sleep": "Sleep",
 }

@@ -13,14 +13,16 @@ from ..libs.utils import easySave, get_sd_version
 from ..libs.sampler import easySampler
 from .. import easyCache, sampler
 
+import execution_context
+
 class hiresFix:
     upscale_methods = ["nearest-exact", "bilinear", "area", "bicubic", "lanczos", "bislerp"]
     crop_methods = ["disabled", "center"]
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {"required": {
-                 "model_name": (folder_paths.get_filename_list("upscale_models"),),
+                 "model_name": (folder_paths.get_filename_list(context, "upscale_models"),),
                  "rescale_after_model": ([False, True], {"default": True}),
                  "rescale_method": (s.upscale_methods,),
                  "rescale": (["by percentage", "to Width/Height", 'to longer side - maintain aspect'],),
@@ -39,6 +41,7 @@ class hiresFix:
                     "vae": ("VAE",),
                 },
                 "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID",
+                           "context": "EXECUTION_CONTEXT",
                            },
                 }
 
@@ -60,7 +63,8 @@ class hiresFix:
 
     def upscale(self, model_name, rescale_after_model, rescale_method, rescale, percent, width, height,
                 longer_side, crop, image_output, link_id, save_prefix, pipe=None, image=None, vae=None, prompt=None,
-                extra_pnginfo=None, my_unique_id=None):
+                extra_pnginfo=None, my_unique_id=None,
+                context: execution_context.ExecutionContext=None):
 
         new_pipe = {}
         if pipe is not None:
@@ -69,7 +73,7 @@ class hiresFix:
         elif image is None or vae is None:
             raise ValueError("pipe or image or vae missing.")
         # Load Model
-        model_path = folder_paths.get_full_path("upscale_models", model_name)
+        model_path = folder_paths.get_full_path(context, "upscale_models", model_name)
         sd = comfy.utils.load_torch_file(model_path, safe_load=True)
         upscale_model = model_loading.load_state_dict(sd).eval()
 
@@ -137,7 +141,7 @@ class hiresFix:
         else:
             new_pipe = {}
 
-        results = easySave(s, save_prefix, image_output, prompt, extra_pnginfo)
+        results = easySave(s, save_prefix, image_output, prompt, extra_pnginfo, context=context)
 
         if image_output in ("Sender", "Sender&Save"):
             PromptServer.instance.send_sync("img-send", {"link_id": link_id, "images": results})
@@ -421,7 +425,7 @@ class detailerFix:
             "optional": {
                 "model": ("MODEL",),
             },
-            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID", }
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "IMAGE", "IMAGE", "IMAGE")
@@ -433,7 +437,7 @@ class detailerFix:
     CATEGORY = "EasyUse/Fix"
 
 
-    def doit(self, pipe, image_output, link_id, save_prefix, model=None, prompt=None, extra_pnginfo=None, my_unique_id=None):
+    def doit(self, pipe, image_output, link_id, save_prefix, model=None, prompt=None, extra_pnginfo=None, my_unique_id=None, context:execution_context.ExecutionContext=None):
 
         # Clean loaded_objects
         easyCache.update_loaded_objects(prompt)
@@ -526,7 +530,7 @@ class detailerFix:
 
         spent_time = 'Fix:' + str((end_time - start_time) / 1000) + '"'
 
-        results = easySave(result_img, save_prefix, image_output, prompt, extra_pnginfo)
+        results = easySave(result_img, save_prefix, image_output, prompt, extra_pnginfo, context=context)
         sampler.update_value_by_id("results", my_unique_id, results)
 
         # Clean loaded_objects
@@ -570,9 +574,9 @@ class detailerFix:
 
 class ultralyticsDetectorForDetailerFix:
     @classmethod
-    def INPUT_TYPES(s):
-        bboxs = ["bbox/" + x for x in folder_paths.get_filename_list("ultralytics_bbox")]
-        segms = ["segm/" + x for x in folder_paths.get_filename_list("ultralytics_segm")]
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
+        bboxs = ["bbox/" + x for x in folder_paths.get_filename_list(context, "ultralytics_bbox")]
+        segms = ["segm/" + x for x in folder_paths.get_filename_list(context, "ultralytics_segm")]
         return {"required":
                     {"model_name": (bboxs + segms,),
                     "bbox_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
@@ -597,10 +601,10 @@ class ultralyticsDetectorForDetailerFix:
 
 class samLoaderForDetailerFix:
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {
             "required": {
-                "model_name": (folder_paths.get_filename_list("sams"),),
+                "model_name": (folder_paths.get_filename_list(context, "sams"),),
                 "device_mode": (["AUTO", "Prefer GPU", "CPU"],{"default": "AUTO"}),
                 "sam_detection_hint": (
                 ["center-1", "horizontal-2", "vertical-2", "rect-4", "diamond-4", "mask-area", "mask-points",
@@ -610,6 +614,9 @@ class samLoaderForDetailerFix:
                 "sam_bbox_expansion": ("INT", {"default": 0, "min": 0, "max": 1000, "step": 1}),
                 "sam_mask_hint_threshold": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "sam_mask_hint_use_negative": (["False", "Small", "Outter"],),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -619,11 +626,12 @@ class samLoaderForDetailerFix:
 
     CATEGORY = "EasyUse/Fix"
 
-    def doit(self, model_name, device_mode, sam_detection_hint, sam_dilation, sam_threshold, sam_bbox_expansion, sam_mask_hint_threshold, sam_mask_hint_use_negative):
+    def doit(self, model_name, device_mode, sam_detection_hint, sam_dilation, sam_threshold, sam_bbox_expansion, sam_mask_hint_threshold, sam_mask_hint_use_negative,
+             context: execution_context.ExecutionContext=None):
         if 'SAMLoader' not in ALL_NODE_CLASS_MAPPINGS:
             raise Exception(f"[ERROR] To use SAMLoader, you need to install 'Impact Pack'")
         cls = ALL_NODE_CLASS_MAPPINGS['SAMLoader']
-        (sam_model,) = cls().load_model(model_name, device_mode)
+        (sam_model,) = cls().load_model(model_name, device_mode, context=context)
         pipe = (sam_model, sam_detection_hint, sam_dilation, sam_threshold, sam_bbox_expansion, sam_mask_hint_threshold, sam_mask_hint_use_negative)
         return (pipe,)
 

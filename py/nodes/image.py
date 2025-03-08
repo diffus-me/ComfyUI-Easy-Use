@@ -19,6 +19,8 @@ from ..libs.image import pil2tensor, tensor2pil, ResizeMode, get_new_bounds, RGB
 from ..libs.colorfix import adain_color_fix, wavelet_color_fix
 from ..config import REMBG_DIR, REMBG_MODELS, HUMANPARSING_MODELS, MEDIAPIPE_MODELS, MEDIAPIPE_DIR
 
+import execution_context
+
 any_type = AlwaysEqualProxy("*")
 # 图像数量
 class imageCount:
@@ -462,7 +464,7 @@ from nodes import PreviewImage, SaveImage
 class imageSaveSimple:
 
   def __init__(self):
-    self.output_dir = folder_paths.get_output_directory()
+    # self.output_dir = folder_paths.get_output_directory()
     self.type = "output"
     self.prefix_append = ""
     self.compress_level = 4
@@ -475,7 +477,7 @@ class imageSaveSimple:
                 "filename_prefix": ("STRING", {"default": "ComfyUI"}),
                 "only_preview": ("BOOLEAN", {"default": False}),
               },
-              "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+              "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "context": "EXECUTION_CONTEXT"},
             }
 
   RETURN_TYPES = ()
@@ -483,11 +485,11 @@ class imageSaveSimple:
   OUTPUT_NODE = True
   CATEGORY = "EasyUse/Image"
 
-  def save(self, images, filename_prefix="ComfyUI", only_preview=False, prompt=None, extra_pnginfo=None):
+  def save(self, images, filename_prefix="ComfyUI", only_preview=False, prompt=None, extra_pnginfo=None, context: execution_context.ExecutionContext=None):
     if only_preview:
-      return PreviewImage().save_images(images, filename_prefix, prompt, extra_pnginfo)
+      return PreviewImage().save_images(images, filename_prefix, prompt, extra_pnginfo, context=context)
     else:
-      return SaveImage().save_images(images, filename_prefix, prompt, extra_pnginfo)
+      return SaveImage().save_images(images, filename_prefix, prompt, extra_pnginfo, context=context)
 
 # 图像批次合并
 class JoinImageBatch:
@@ -843,7 +845,7 @@ class imageRemBg:
         "add_background": (["none", "white", "black"], {"default": "none"}),
         "refine_foreground": ("BOOLEAN", {"default": False}),
       },
-      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "context": "EXECUTION_CONTEXT"},
     }
 
   RETURN_TYPES = ("IMAGE", "MASK")
@@ -854,7 +856,7 @@ class imageRemBg:
   CATEGORY = "EasyUse/Image"
 
 
-  def remove(self, rem_mode, images, image_output, save_prefix, torchscript_jit=False, add_background='none', refine_foreground=False, prompt=None, extra_pnginfo=None):
+  def remove(self, rem_mode, images, image_output, save_prefix, torchscript_jit=False, add_background='none', refine_foreground=False, prompt=None, extra_pnginfo=None, context: execution_context.ExecutionContext=None):
     new_images = list()
     masks = list()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -995,7 +997,7 @@ class imageRemBg:
       _canvas.paste(_layer, mask=_layer)
       new_images = pil2tensor(_canvas)
 
-    results = easySave(new_images, save_prefix, image_output, prompt, extra_pnginfo)
+    results = easySave(new_images, save_prefix, image_output, prompt, extra_pnginfo, context=context)
 
     if image_output in ("Hide", "Hide/Save"):
       return {"ui": {},
@@ -1017,7 +1019,7 @@ class imageChooser(PreviewImage):
       "optional": {
         "images": ("IMAGE",),
       },
-      "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "extra_pnginfo": "EXTRA_PNGINFO"},
+      "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "extra_pnginfo": "EXTRA_PNGINFO", "context": "EXECUTION_CONTEXT"},
     }
 
   RETURN_TYPES = ("IMAGE",)
@@ -1040,7 +1042,9 @@ class imageChooser(PreviewImage):
     else:
       return None
 
-  def chooser(self, prompt=None, my_unique_id=None, extra_pnginfo=None, **kwargs):
+  def chooser(self, prompt=None, my_unique_id=None, extra_pnginfo=None, context: execution_context.ExecutionContext=None, **kwargs):
+    if isinstance(context, list):
+      context = context[0]
     id = my_unique_id[0]
     id = id.split('.')[len(id.split('.')) - 1] if "." in id else id
 
@@ -1085,7 +1089,7 @@ class imageColorMatch(PreviewImage):
         "image_output": (["Hide", "Preview", "Save", "Hide/Save"], {"default": "Preview"}),
         "save_prefix": ("STRING", {"default": "ComfyUI"}),
       },
-      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "context": "EXECUTION_CONTEXT"},
     }
 
   CATEGORY = "EasyUse/Image"
@@ -1095,7 +1099,7 @@ class imageColorMatch(PreviewImage):
   OUTPUT_NODE = True
   FUNCTION = "color_match"
 
-  def color_match(self, image_ref, image_target, method, image_output, save_prefix, prompt=None, extra_pnginfo=None):
+  def color_match(self, image_ref, image_target, method, image_output, save_prefix, prompt=None, extra_pnginfo=None, context:execution_context.ExecutionContext=None):
     if method in ["wavelet", "adain"]:
       result_images = wavelet_color_fix(tensor2pil(image_target), tensor2pil(image_ref)) if method == 'wavelet' else adain_color_fix(tensor2pil(image_target), tensor2pil(image_ref))
       new_images = pil2tensor(result_images)
@@ -1129,7 +1133,7 @@ class imageColorMatch(PreviewImage):
 
       new_images = torch.stack(out, dim=0).to(torch.float32)
 
-    results = easySave(new_images, save_prefix, image_output, prompt, extra_pnginfo)
+    results = easySave(new_images, save_prefix, image_output, prompt, extra_pnginfo, context=context)
 
     if image_output in ("Hide", "Hide/Save"):
       return {"ui": {},
@@ -1154,7 +1158,7 @@ class imageDetailTransfer:
       "optional": {
         "mask": ("MASK",),
       },
-      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "context": "EXECUTION_CONTEXT"},
     }
 
   RETURN_TYPES = ("IMAGE",)
@@ -1165,7 +1169,7 @@ class imageDetailTransfer:
 
 
 
-  def transfer(self, target, source, mode, blur_sigma, blend_factor, image_output, save_prefix, mask=None, prompt=None, extra_pnginfo=None):
+  def transfer(self, target, source, mode, blur_sigma, blend_factor, image_output, save_prefix, mask=None, prompt=None, extra_pnginfo=None, context: execution_context.ExecutionContext=None):
     batch_size, height, width, _ = source.shape
     device = comfy.model_management.get_torch_device()
     target_tensor = target.permute(0, 3, 1, 2).clone().to(device)
@@ -1224,7 +1228,7 @@ class imageDetailTransfer:
     new_image = torch.clamp(new_image, 0, 1)
     new_image = new_image.permute(0, 2, 3, 1).cpu().float()
 
-    results = easySave(new_image, save_prefix, image_output, prompt, extra_pnginfo)
+    results = easySave(new_image, save_prefix, image_output, prompt, extra_pnginfo, context=context)
 
     if image_output in ("Hide", "Hide/Save"):
       return {"ui": {},
@@ -1282,6 +1286,7 @@ class humanSegmentation:
           "hidden": {
               "prompt": "PROMPT",
               "my_unique_id": "UNIQUE_ID",
+              "context": "EXECUTION_CONTEXT",
           }
         }
 
@@ -1303,12 +1308,11 @@ class humanSegmentation:
         numpy_image = cv2.cvtColor(numpy_image, cv2.COLOR_BGR2RGB)
       return mp.Image(image_format=image_format, data=numpy_image)
 
-    def parsing(self, image, confidence, method, crop_multi, mask_components, prompt=None, my_unique_id=None):
+    def parsing(self, image, confidence, method, crop_multi, mask_components, prompt=None, my_unique_id=None, context: execution_context.ExecutionContext=None):
       if isinstance(mask_components, str):
         mask_components = [int(x) for x in mask_components.split(',') if x]
       else:
         mask_components = mask_components if mask_components else []
-
       if method == 'selfie_multiclass_256x256':
         try:
           import mediapipe as mp
@@ -1812,7 +1816,7 @@ class loadImageBase64:
       "optional": {
 
       },
-      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+      "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "context": "EXECUTION_CONTEXT"},
     }
 
   RETURN_TYPES = ("IMAGE", "MASK")
@@ -1825,7 +1829,7 @@ class loadImageBase64:
       return cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-  def load_image(self, base64_data, image_output, save_prefix, prompt=None, extra_pnginfo=None):
+  def load_image(self, base64_data, image_output, save_prefix, prompt=None, extra_pnginfo=None, context: execution_context.ExecutionContext = None):
     nparr = np.frombuffer(base64.b64decode(base64_data), np.uint8)
 
     result = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
@@ -1840,7 +1844,7 @@ class loadImageBase64:
     result = result.astype(np.float32) / 255.0
     new_images = torch.from_numpy(result)[None,]
 
-    results = easySave(new_images, save_prefix, image_output, None, None)
+    results = easySave(new_images, save_prefix, image_output, None, None, context=context)
     mask = mask.unsqueeze(0)
 
     if image_output in ("Hide", "Hide/Save"):
@@ -1881,7 +1885,8 @@ class imageToBase64:
 class removeLocalImage:
 
   def __init__(self):
-    self.hasFile = False
+    # self.hasFile = False
+    pass
 
   @classmethod
   def INPUT_TYPES(s):
@@ -1890,6 +1895,9 @@ class removeLocalImage:
           "any": (any_type,),
           "file_name": ("STRING",{"default":""}),
         },
+        "hidden": {
+          "context": "EXECUTION_CONTEXT",
+        }
       }
 
   RETURN_TYPES = ()
@@ -1899,9 +1907,10 @@ class removeLocalImage:
 
 
 
-  def remove(self, any, file_name):
-    self.hasFile = False
+  def remove(self, any, file_name, context: execution_context.ExecutionContext = None):
+
     def listdir(path, dir_name=''):
+      has_file = False
       for file in os.listdir(path):
         file_path = os.path.join(path, file)
         if os.path.isdir(file_path):
@@ -1911,13 +1920,14 @@ class removeLocalImage:
           file = os.path.join(dir_name, file)
           name_without_extension, file_extension = os.path.splitext(file)
           if name_without_extension == file_name or file == file_name:
-            os.remove(os.path.join(folder_paths.input_directory, file))
-            self.hasFile = True
+            os.remove(os.path.join(folder_paths.get_input_directory(context.user_hash), file))
+            has_file = True
             break
+      return has_file
 
-    listdir(folder_paths.input_directory, '')
+    has_file = listdir(folder_paths.get_input_directory(context.user_hash), '')
 
-    if self.hasFile:
+    if has_file:
       PromptServer.instance.send_sync("easyuse-toast", {"content": "Removed SuccessFully", "type":'success'})
     else:
       PromptServer.instance.send_sync("easyuse-toast", {"content": "Removed Failed", "type": 'error'})
@@ -1944,7 +1954,8 @@ class loadImagesForLoop:
         "initial_value0": (any_type,),
         "prompt": "PROMPT",
         "extra_pnginfo": "EXTRA_PNGINFO",
-        "unique_id": "UNIQUE_ID"
+        "unique_id": "UNIQUE_ID",
+        "context": "EXECUTION_CONTEXT",
       }
     }
 
@@ -1955,8 +1966,10 @@ class loadImagesForLoop:
 
   CATEGORY = "image"
 
-  def load_images(self, directory: str, start_index: int = 0, limit: int =-1, prompt=None, extra_pnginfo=None, unique_id=None, **kwargs):
-    print(directory)
+  def load_images(self, directory: str, start_index: int = 0, limit: int =-1, prompt=None, extra_pnginfo=None, unique_id=None,
+                  context: execution_context.ExecutionContext=None, **kwargs):
+    input_dir = folder_paths.get_input_directory(context.user_hash)
+    directory = os.path.join(input_dir, directory)
     if not os.path.isdir(directory):
       raise FileNotFoundError(f"Directory '{directory}' cannot be found.")
 

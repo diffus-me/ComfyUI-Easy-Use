@@ -14,6 +14,8 @@ from ..libs.adv_encode import advanced_encode
 from ..libs.utils import AlwaysEqualProxy
 any_type = AlwaysEqualProxy("*")
 
+import execution_context
+
 
 class If:
     @classmethod
@@ -386,7 +388,7 @@ class stableDiffusion3API:
 
 class saveImageLazy():
   def __init__(self):
-    self.output_dir = folder_paths.get_output_directory()
+    # self.output_dir = folder_paths.get_output_directory()
     self.type = "output"
     self.compress_level = 4
 
@@ -398,7 +400,7 @@ class saveImageLazy():
            "save_metadata": ("BOOLEAN", {"default": True}),
            },
         "optional":{},
-        "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+        "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "context": "EXECUTION_CONTEXT"},
       }
 
   RETURN_TYPES = ("IMAGE",)
@@ -409,11 +411,11 @@ class saveImageLazy():
   DEPRECATED = True
   CATEGORY = "EasyUse/🚫 Deprecated"
 
-  def save(self, images, filename_prefix, save_metadata, prompt=None, extra_pnginfo=None):
+  def save(self, images, filename_prefix, save_metadata, prompt=None, extra_pnginfo=None, context: execution_context.ExecutionContext=None):
     extension = 'png'
-
+    output_dir = folder_paths.get_output_directory(context)
     full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(
-      filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
+      filename_prefix, output_dir, images[0].shape[1], images[0].shape[0])
 
     results = list()
     for (batch_number, image) in enumerate(images):
@@ -459,7 +461,8 @@ class saveImageLazy():
       results.append({
         "filename": file,
         "subfolder": subfolder,
-        "type": self.type
+        "type": self.type,
+        "user_hash": context.user_hash,
       })
 
     return {"ui": {"images": results} , "result": (images,)}
@@ -500,7 +503,7 @@ NODE_CLASS_MAPPINGS = {
     "easy latentNoisy": latentNoisy,
     "easy latentCompositeMaskedWithCond": latentCompositeMaskedWithCond,
     "easy injectNoiseToLatent": injectNoiseToLatent,
-    "easy stableDiffusion3API": stableDiffusion3API,
+    # "easy stableDiffusion3API": stableDiffusion3API,
     "easy saveImageLazy": saveImageLazy,
     "easy saveTextLazy": saveTextLazy,
     "easy showAnythingLazy": showAnythingLazy,
@@ -514,7 +517,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "easy latentNoisy": "LatentNoisy (🚫Deprecated)",
     "easy latentCompositeMaskedWithCond": "LatentCompositeMaskedWithCond (🚫Deprecated)",
     "easy injectNoiseToLatent": "InjectNoiseToLatent (🚫Deprecated)",
-    "easy stableDiffusion3API": "StableDiffusion3API (🚫Deprecated)",
+    # "easy stableDiffusion3API": "StableDiffusion3API (🚫Deprecated)",
     "easy saveImageLazy": "SaveImageLazy (🚫Deprecated)",
     "easy saveTextLazy": "SaveTextLazy (🚫Deprecated)",
     "easy showAnythingLazy": "ShowAnythingLazy (🚫Deprecated)",

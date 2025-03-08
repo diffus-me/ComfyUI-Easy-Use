@@ -8,6 +8,8 @@ from ..libs.log import log_node_info
 from ..libs import cache as backend_cache
 from ..config import *
 
+import execution_context
+
 # FooocusInpaint
 class applyFooocusInpaint:
     @classmethod
@@ -47,22 +49,26 @@ class applyFooocusInpaint:
 from ..modules.brushnet import BrushNet
 class applyBrushNet:
 
-    def get_files_with_extension(folder='inpaint', extensions='.safetensors'):
-        return [file for file in folder_paths.get_filename_list(folder) if file.endswith(extensions)]
+    @staticmethod
+    def get_files_with_extension(context: execution_context.ExecutionContext, folder='inpaint', extensions='.safetensors'):
+        return [file for file in folder_paths.get_filename_list(context, folder) if file.endswith(extensions)]
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {
             "required": {
                 "pipe": ("PIPE_LINE",),
                 "image": ("IMAGE",),
                 "mask": ("MASK",),
-                "brushnet": (s.get_files_with_extension(),),
+                "brushnet": (s.get_files_with_extension(context),),
                 "dtype": (['float16', 'bfloat16', 'float32', 'float64'], ),
                 "scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0}),
                 "start_at": ("INT", {"default": 0, "min": 0, "max": 10000}),
                 "end_at": ("INT", {"default": 10000, "min": 0, "max": 10000}),
             },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
+            }
         }
 
     RETURN_TYPES = ("PIPE_LINE",)
@@ -70,7 +76,7 @@ class applyBrushNet:
     CATEGORY = "EasyUse/Inpaint"
     FUNCTION = "apply"
 
-    def apply(self, pipe, image, mask, brushnet, dtype, scale, start_at, end_at):
+    def apply(self, pipe, image, mask, brushnet, dtype, scale, start_at, end_at, context: execution_context.ExecutionContext):
 
         model = pipe['model']
         vae = pipe['vae']
@@ -81,7 +87,7 @@ class applyBrushNet:
             log_node_info("easy brushnetApply", f"Using {brushnet} Cached")
             _, brushnet_model = backend_cache.cache[brushnet][1]
         else:
-            brushnet_file = os.path.join(folder_paths.get_full_path("inpaint", brushnet))
+            brushnet_file = os.path.join(folder_paths.get_full_path(context, "inpaint", brushnet))
             brushnet_model, = cls.load_brushnet_model(brushnet_file, dtype)
             backend_cache.update_cache(brushnet, 'brushnet', (False, brushnet_model))
         m, positive, negative, latent = cls.brushnet_model_update(model=model, vae=vae, image=image, mask=mask,
@@ -100,18 +106,19 @@ class applyBrushNet:
 
 # #powerpaint
 class applyPowerPaint:
-    def get_files_with_extension(folder='inpaint', extensions='.safetensors'):
-        return [file for file in folder_paths.get_filename_list(folder) if file.endswith(extensions)]
+    @staticmethod
+    def get_files_with_extension(context: execution_context.ExecutionContext, folder='inpaint', extensions='.safetensors'):
+        return [file for file in folder_paths.get_filename_list(context, folder) if file.endswith(extensions)]
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {
             "required": {
                 "pipe": ("PIPE_LINE",),
                 "image": ("IMAGE",),
                 "mask": ("MASK",),
-                "powerpaint_model": (s.get_files_with_extension(),),
-                "powerpaint_clip": (s.get_files_with_extension(extensions='.bin'),),
+                "powerpaint_model": (s.get_files_with_extension(context),),
+                "powerpaint_clip": (s.get_files_with_extension(context, extensions='.bin'),),
                 "dtype": (['float16', 'bfloat16', 'float32', 'float64'],),
                 "fitting": ("FLOAT", {"default": 1.0, "min": 0.3, "max": 1.0}),
                 "function": (['text guided', 'shape guided', 'object removal', 'context aware', 'image outpainting'],),
@@ -120,6 +127,9 @@ class applyPowerPaint:
                 "end_at": ("INT", {"default": 10000, "min": 0, "max": 10000}),
                 "save_memory": (['none', 'auto', 'max'],),
             },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
+            }
         }
 
     RETURN_TYPES = ("PIPE_LINE",)
@@ -127,7 +137,8 @@ class applyPowerPaint:
     CATEGORY = "EasyUse/Inpaint"
     FUNCTION = "apply"
 
-    def apply(self, pipe, image, mask, powerpaint_model, powerpaint_clip, dtype, fitting, function, scale, start_at, end_at, save_memory='none'):
+    def apply(self, pipe, image, mask, powerpaint_model, powerpaint_clip, dtype, fitting, function, scale, start_at, end_at, save_memory='none',
+              context: execution_context.ExecutionContext=None):
         model = pipe['model']
         vae = pipe['vae']
         positive = pipe['positive']
@@ -141,14 +152,14 @@ class applyPowerPaint:
         else:
             model_url = POWERPAINT_MODELS['base_fp16']['model_url']
             base_clip = get_local_filepath(model_url, os.path.join(folder_paths.models_dir, 'clip'))
-            ppclip, = cls.load_powerpaint_clip(base_clip, os.path.join(folder_paths.get_full_path("inpaint", powerpaint_clip)))
+            ppclip, = cls.load_powerpaint_clip(base_clip, os.path.join(folder_paths.get_full_path(context, "inpaint", powerpaint_clip)))
             backend_cache.update_cache(powerpaint_clip, 'ppclip', (False, ppclip))
         # load powerpaint model
         if powerpaint_model in backend_cache.cache:
             log_node_info("easy powerpaintApply", f"Using {powerpaint_model} Cached")
             _, powerpaint = backend_cache.cache[powerpaint_model][1]
         else:
-            powerpaint_file = os.path.join(folder_paths.get_full_path("inpaint", powerpaint_model))
+            powerpaint_file = os.path.join(folder_paths.get_full_path(context, "inpaint", powerpaint_model))
             powerpaint, = cls.load_brushnet_model(powerpaint_file, dtype)
             backend_cache.update_cache(powerpaint_model, 'powerpaint', (False, powerpaint))
         m, positive, negative, latent = cls.powerpaint_model_update(model=model, vae=vae, image=image, mask=mask, powerpaint=powerpaint,
@@ -186,6 +197,9 @@ class applyInpaint:
             },
             "optional":{
                 "noise_mask": ("BOOLEAN", {"default": True})
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -239,7 +253,7 @@ class applyInpaint:
 
         return pipe
 
-    def get_brushnet_model(self, type, model):
+    def get_brushnet_model(self, context: execution_context.ExecutionContext, type, model):
         model_type = 'sdxl' if isinstance(model.model.model_config, comfy.supported_models.SDXL) else 'sd1'
         if type == 'brushnet_random':
             brush_model = BRUSHNET_MODELS['random_mask'][model_type]['model_url']
@@ -255,7 +269,7 @@ class applyInpaint:
                 pattern = 'brushnet.segmentation.mask.*.(safetensors|bin)$'
 
 
-        brushfile = [e for e in folder_paths.get_filename_list('inpaint') if re.search(pattern, e, re.IGNORECASE)]
+        brushfile = [e for e in folder_paths.get_filename_list(context, 'inpaint') if re.search(pattern, e, re.IGNORECASE)]
         brushname = brushfile[0] if brushfile else None
         if not brushname:
             from urllib.parse import urlparse
@@ -280,14 +294,15 @@ class applyInpaint:
         clip_name = os.path.join("powerpaint",os.path.basename(clip_parsed_url.path))
         return model_name, clip_name
 
-    def apply(self, pipe, image, mask, inpaint_mode, encode, grow_mask_by, dtype, fitting, function, scale, start_at, end_at, noise_mask=True):
+    def apply(self, pipe, image, mask, inpaint_mode, encode, grow_mask_by, dtype, fitting, function, scale, start_at, end_at, noise_mask=True,
+              context: execution_context.ExecutionContext=None):
         new_pipe = {
             **pipe,
         }
         del pipe
         if inpaint_mode in ['brushnet_random', 'brushnet_segmentation']:
-            brushnet = self.get_brushnet_model(inpaint_mode, new_pipe['model'])
-            new_pipe, = applyBrushNet().apply(new_pipe, image, mask, brushnet, dtype, scale, start_at, end_at)
+            brushnet = self.get_brushnet_model(context, inpaint_mode, new_pipe['model'])
+            new_pipe, = applyBrushNet().apply(new_pipe, image, mask, brushnet, dtype, scale, start_at, end_at, context=context)
         elif inpaint_mode == 'powerpaint':
             powerpaint_model, powerpaint_clip = self.get_powerpaint_model(new_pipe['model'])
             new_pipe, = applyPowerPaint().apply(new_pipe, image, mask, powerpaint_model, powerpaint_clip, dtype, fitting, function, scale, start_at, end_at)

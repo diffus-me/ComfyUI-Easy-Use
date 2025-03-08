@@ -17,6 +17,8 @@ from ..libs import cache as backend_cache
 
 from .. import easyCache
 
+import execution_context
+
 class applyLoraPrompt:
     @classmethod
     def INPUT_TYPES(s):
@@ -53,6 +55,9 @@ class applyLoraStack:
             },
             "optional": {
                 "optional_clip": ("CLIP",),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -61,13 +66,13 @@ class applyLoraStack:
     CATEGORY = "EasyUse/Adapter"
     FUNCTION = "apply"
 
-    def apply(self, lora_stack, model, optional_clip=None):
+    def apply(self, lora_stack, model, optional_clip=None, context: execution_context.ExecutionContext = None):
         clip = None
         if lora_stack is not None and len(lora_stack) > 0:
             for lora in lora_stack:
                 lora = {"lora_name": lora[0], "model": model, "clip": optional_clip, "model_strength": lora[1],
                         "clip_strength": lora[2]}
-                model, clip = easyCache.load_lora(lora, model, optional_clip, use_cache=False)
+                model, clip = easyCache.load_lora(context, lora, model, optional_clip, use_cache=False)
         return (model, optional_clip if clip is None else clip)
 
 class applyControlnetStack:
@@ -79,6 +84,9 @@ class applyControlnetStack:
                 "pipe": ("PIPE_LINE",),
             },
             "optional": {
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -87,7 +95,7 @@ class applyControlnetStack:
     CATEGORY = "EasyUse/Adapter"
     FUNCTION = "apply"
 
-    def apply(self, controlnet_stack, pipe):
+    def apply(self, controlnet_stack, pipe, context: execution_context.ExecutionContext = None):
 
         positive = pipe['positive']
         negative = pipe['negative']
@@ -96,7 +104,7 @@ class applyControlnetStack:
 
         if controlnet_stack is not None and len(controlnet_stack) >0:
             for controlnet in controlnet_stack:
-                positive, negative = easyControlnet().apply(controlnet[0], controlnet[5], positive, negative, controlnet[1], start_percent=controlnet[2], end_percent=controlnet[3], control_net=None, scale_soft_weights=controlnet[4], mask=None, easyCache=easyCache, use_cache=False, model=model, vae=vae)
+                positive, negative = easyControlnet().apply(context, controlnet[0], controlnet[5], positive, negative, controlnet[1], start_percent=controlnet[2], end_percent=controlnet[3], control_net=None, scale_soft_weights=controlnet[4], mask=None, easyCache=easyCache, use_cache=False, model=model, vae=vae)
 
         new_pipe = {
             **pipe,
@@ -260,9 +268,9 @@ class ipadapter:
     def error(self):
         raise Exception(f"[ERROR] To use ipadapterApply, you need to install 'ComfyUI_IPAdapter_plus'")
 
-    def get_clipvision_file(self, preset, node_name):
+    def get_clipvision_file(self, context: execution_context.ExecutionContext, preset, node_name):
         preset = preset.lower()
-        clipvision_list = folder_paths.get_filename_list("clip_vision")
+        clipvision_list = folder_paths.get_filename_list(context, "clip_vision")
         if preset.startswith("regular"):
             # pattern = 'sigclip.vision.patch14.384'
             pattern = 'siglip.so400m.patch14.384'
@@ -274,14 +282,14 @@ class ipadapter:
             pattern = '(ViT.H.14.*s32B.b79K|ipadapter.*sd15|sd1.?5.*model.(bin|safetensors))'
         clipvision_files = [e for e in clipvision_list if re.search(pattern, e, re.IGNORECASE)]
         clipvision_name = clipvision_files[0] if len(clipvision_files)>0 else None
-        clipvision_file = folder_paths.get_full_path("clip_vision", clipvision_name) if clipvision_name else None
+        clipvision_file = folder_paths.get_full_path(context, "clip_vision", clipvision_name) if clipvision_name else None
         # if clipvision_name is not None:
         #     log_node_info(node_name, f"Using {clipvision_name}")
         return clipvision_file, clipvision_name
 
-    def get_ipadapter_file(self, preset, model_type, node_name):
+    def get_ipadapter_file(self, context: execution_context.ExecutionContext, preset, model_type, node_name):
         preset = preset.lower()
-        ipadapter_list = folder_paths.get_filename_list("ipadapter")
+        ipadapter_list = folder_paths.get_filename_list(context, "ipadapter")
         is_insightface = False
         lora_pattern = None
         is_sdxl = model_type == 'sdxl'
@@ -381,7 +389,7 @@ class ipadapter:
 
         ipadapter_files = [e for e in ipadapter_list if re.search(pattern, e, re.IGNORECASE)]
         ipadapter_name = ipadapter_files[0] if len(ipadapter_files)>0 else None
-        ipadapter_file = folder_paths.get_full_path("ipadapter", ipadapter_name) if ipadapter_name else None
+        ipadapter_file = folder_paths.get_full_path(context, "ipadapter", ipadapter_name) if ipadapter_name else None
         # if ipadapter_name is not None:
         #     log_node_info(node_name, f"Using {ipadapter_name}")
 
@@ -403,16 +411,16 @@ class ipadapter:
 
         return lora_pattern
 
-    def get_lora_file(self, preset, pattern, model_type, model, model_strength, clip_strength, clip=None):
-        lora_list = folder_paths.get_filename_list("loras")
+    def get_lora_file(self, context: execution_context.ExecutionContext, preset, pattern, model_type, model, model_strength, clip_strength, clip=None):
+        lora_list = folder_paths.get_filename_list(context, "loras")
         lora_files = [e for e in lora_list if re.search(pattern, e, re.IGNORECASE)]
         lora_name = lora_files[0] if lora_files else None
         if lora_name:
-            return easyCache.load_lora({"model": model, "clip": clip, "lora_name": lora_name, "model_strength":model_strength, "clip_strength":clip_strength},)
+            return easyCache.load_lora(context, {"model": model, "clip": clip, "lora_name": lora_name, "model_strength":model_strength, "clip_strength":clip_strength},)
         else:
             if "lora_url" in IPADAPTER_MODELS[preset][model_type]:
                 lora_name = get_local_filepath(IPADAPTER_MODELS[preset][model_type]["lora_url"], os.path.join(folder_paths.models_dir, "loras"))
-                return easyCache.load_lora({"model": model, "clip": clip, "lora_name": lora_name, "model_strength":model_strength, "clip_strength":clip_strength},)
+                return easyCache.load_lora(context, {"model": model, "clip": clip, "lora_name": lora_name, "model_strength":model_strength, "clip_strength":clip_strength},)
             return (model, clip)
 
     def ipadapter_model_loader(self, file):
@@ -445,7 +453,7 @@ class ipadapter:
 
         return model
 
-    def load_model(self, model, preset, lora_model_strength, provider="CPU", clip_vision=None, optional_ipadapter=None, cache_mode='none', node_name='easy ipadapterApply'):
+    def load_model(self, context: execution_context.ExecutionContext, model, preset, lora_model_strength, provider="CPU", clip_vision=None, optional_ipadapter=None, cache_mode='none', node_name='easy ipadapterApply'):
         pipeline = {"clipvision": {'file': None, 'model': None}, "ipadapter": {'file': None, 'model': None},
                     "insightface": {'provider': None, 'model': None}}
         ipadapter, insightface, is_insightface, lora_pattern = None, None, None, None
@@ -460,7 +468,7 @@ class ipadapter:
 
         # 1. Load the clipvision model
         if not clip_vision:
-            clipvision_file, clipvision_name = self.get_clipvision_file(preset, node_name)
+            clipvision_file, clipvision_name = self.get_clipvision_file(context, preset, node_name)
             if clipvision_file is None:
                 if preset.lower().startswith("regular"):
                     # model_url = IPADAPTER_CLIPVISION_MODELS["sigclip_vision_patch14_384"]["model_url"]
@@ -516,7 +524,7 @@ class ipadapter:
         # 2. Load the ipadapter model
         model_type = get_sd_version(model)
         if not ipadapter:
-            ipadapter_file, ipadapter_name, is_insightface, lora_pattern = self.get_ipadapter_file(preset, model_type, node_name)
+            ipadapter_file, ipadapter_name, is_insightface, lora_pattern = self.get_ipadapter_file(context, preset, model_type, node_name)
             if ipadapter_file is None:
                 model_url = IPADAPTER_MODELS[preset][model_type]["model_url"]
                 local_file_name = IPADAPTER_MODELS[preset][model_type]['model_file_name'] if "model_file_name" in IPADAPTER_MODELS[preset][model_type] else None
@@ -539,7 +547,7 @@ class ipadapter:
         # 3. Load the lora model if needed
         if lora_pattern is not None:
             if lora_model_strength > 0:
-              model, _ = self.get_lora_file(preset, lora_pattern, model_type, model, lora_model_strength, 1)
+              model, _ = self.get_lora_file(context, preset, lora_pattern, model_type, model, lora_model_strength, 1)
 
         # 4. Load the insightface model if needed
         if is_insightface:
@@ -585,6 +593,9 @@ class ipadapterApply(ipadapter):
             "optional": {
                 "attn_mask": ("MASK",),
                 "optional_ipadapter": ("IPADAPTER",),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -593,9 +604,10 @@ class ipadapterApply(ipadapter):
     CATEGORY = "EasyUse/Adapter"
     FUNCTION = "apply"
 
-    def apply(self, model, image, preset, lora_strength, provider, weight, weight_faceidv2, start_at, end_at, cache_mode, use_tiled, attn_mask=None, optional_ipadapter=None, weight_kolors=None):
+    def apply(self, model, image, preset, lora_strength, provider, weight, weight_faceidv2, start_at, end_at, cache_mode, use_tiled, attn_mask=None, optional_ipadapter=None, weight_kolors=None,
+              context: execution_context.ExecutionContext=None):
         images, masks = image, [None]
-        model, ipadapter = self.load_model(model, preset, lora_strength, provider, clip_vision=None, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
+        model, ipadapter = self.load_model(context, model, preset, lora_strength, provider, clip_vision=None, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
         if preset == 'REGULAR - FLUX and SD3.5 only (high strength)':
             from ..modules.ipadapter import InstantXFluxIpadapterApply, InstantXSD3IpadapterApply
             model_type = get_sd_version(model)
@@ -661,6 +673,9 @@ class ipadapterApplyAdvanced(ipadapter):
                 "clip_vision": ("CLIP_VISION",),
                 "optional_ipadapter": ("IPADAPTER",),
                 "layer_weights": ("STRING", {"default": "", "multiline": True, "placeholder": "Mad Scientist Layer Weights"}),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -669,9 +684,10 @@ class ipadapterApplyAdvanced(ipadapter):
     CATEGORY = "EasyUse/Adapter"
     FUNCTION = "apply"
 
-    def apply(self, model, image, preset, lora_strength, provider, weight, weight_faceidv2, weight_type, combine_embeds, start_at, end_at, embeds_scaling, cache_mode, use_tiled, use_batch, sharpening, weight_style=1.0, weight_composition=1.0, image_style=None, image_composition=None, expand_style=False, image_negative=None, clip_vision=None, attn_mask=None, optional_ipadapter=None, layer_weights=None, weight_kolors=None):
+    def apply(self, model, image, preset, lora_strength, provider, weight, weight_faceidv2, weight_type, combine_embeds, start_at, end_at, embeds_scaling, cache_mode, use_tiled, use_batch, sharpening, weight_style=1.0, weight_composition=1.0, image_style=None, image_composition=None, expand_style=False, image_negative=None, clip_vision=None, attn_mask=None, optional_ipadapter=None, layer_weights=None, weight_kolors=None,
+              context: execution_context.ExecutionContext=None):
         images, masks = image, [None]
-        model, ipadapter = self.load_model(model, preset, lora_strength, provider, clip_vision=clip_vision, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
+        model, ipadapter = self.load_model(context, model, preset, lora_strength, provider, clip_vision=clip_vision, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
 
         if weight_kolors is None:
             weight_kolors = weight
@@ -773,6 +789,9 @@ class ipadapterStyleComposition(ipadapter):
                 "attn_mask": ("MASK",),
                 "clip_vision": ("CLIP_VISION",),
                 "optional_ipadapter": ("IPADAPTER",),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -783,8 +802,9 @@ class ipadapterStyleComposition(ipadapter):
     CATEGORY = "EasyUse/Adapter"
     FUNCTION = "apply"
 
-    def apply(self, model, preset, weight_style, weight_composition, expand_style, combine_embeds, start_at, end_at, embeds_scaling, cache_mode, image_style=None , image_composition=None, image_negative=None, clip_vision=None, attn_mask=None, optional_ipadapter=None):
-        model, ipadapter = self.load_model(model, preset, 0, 'CPU', clip_vision=None, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
+    def apply(self, model, preset, weight_style, weight_composition, expand_style, combine_embeds, start_at, end_at, embeds_scaling, cache_mode, image_style=None , image_composition=None, image_negative=None, clip_vision=None, attn_mask=None, optional_ipadapter=None,
+              context: execution_context.ExecutionContext=None):
+        model, ipadapter = self.load_model(context, model, preset, 0, 'CPU', clip_vision=None, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
 
         if "IPAdapterAdvanced" not in ALL_NODE_CLASS_MAPPINGS:
             self.error()
@@ -811,7 +831,10 @@ class ipadapterApplyEncoder(ipadapter):
                 "preset": (normal_presets,),
                 "num_embeds":  ("INT", {"default": 2, "min": 1, "max": max_embeds_num}),
             },
-            "optional": {}
+            "optional": {},
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
+            }
         }
 
         for i in range(1, max_embeds_num + 1):
@@ -858,10 +881,11 @@ class ipadapterApplyEncoder(ipadapter):
         model = kwargs['model']
         clip_vision = kwargs['clip_vision']
         preset = kwargs['preset']
+        context = kwargs["context"]
         if 'optional_ipadapter' in kwargs:
             ipadapter = kwargs['optional_ipadapter']
         else:
-            model, ipadapter = self.load_model(model, preset, 0, 'CPU', clip_vision=clip_vision, optional_ipadapter=None, cache_mode='none')
+            model, ipadapter = self.load_model(context, model, preset, 0, 'CPU', clip_vision=clip_vision, optional_ipadapter=None, cache_mode='none')
 
         if "IPAdapterEncoder" not in ALL_NODE_CLASS_MAPPINGS:
             self.error()
@@ -951,7 +975,7 @@ class ipadapterApplyRegional(ipadapter):
                 "mask": ("MASK",),
                 "optional_ipadapter_params": ("IPADAPTER_PARAMS",),
             },
-            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID"}
+            "hidden": {"prompt": "PROMPT", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT"},
         }
 
     RETURN_TYPES = ("PIPE_LINE", "IPADAPTER_PARAMS", "CONDITIONING", "CONDITIONING")
@@ -959,7 +983,8 @@ class ipadapterApplyRegional(ipadapter):
     CATEGORY = "EasyUse/Adapter"
     FUNCTION = "apply"
 
-    def apply(self, pipe, image, positive, negative, image_weight, prompt_weight, weight_type, start_at, end_at, mask=None, optional_ipadapter_params=None, prompt=None, my_unique_id=None):
+    def apply(self, pipe, image, positive, negative, image_weight, prompt_weight, weight_type, start_at, end_at, mask=None, optional_ipadapter_params=None, prompt=None, my_unique_id=None,
+              context: execution_context.ExecutionContext=None):
         model = pipe['model']
 
         if positive == '':
@@ -986,8 +1011,8 @@ class ipadapterApplyRegional(ipadapter):
             negative_token_normalization = pipe['loader_settings']['negative_token_normalization']
             negative_weight_interpretation = pipe['loader_settings']['negative_weight_interpretation']
 
-            positive_embeddings_final, positive_wildcard_prompt, model, clip = prompt_to_cond('positive', model, clip, clip_skip, pipe_lora_stack, positive, positive_token_normalization, positive_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache)
-            negative_embeddings_final, negative_wildcard_prompt, model, clip = prompt_to_cond('negative', model, clip, clip_skip, pipe_lora_stack, negative, negative_token_normalization, negative_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache)
+            positive_embeddings_final, positive_wildcard_prompt, model, clip = prompt_to_cond(context, 'positive', model, clip, clip_skip, pipe_lora_stack, positive, positive_token_normalization, positive_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache)
+            negative_embeddings_final, negative_wildcard_prompt, model, clip = prompt_to_cond(context, 'negative', model, clip, clip_skip, pipe_lora_stack, negative, negative_token_normalization, negative_weight_interpretation, a1111_prompt_style, my_unique_id, prompt, easyCache)
 
         #ipadapter regional
         if "IPAdapterRegionalConditioning" not in ALL_NODE_CLASS_MAPPINGS:
@@ -1046,6 +1071,9 @@ class ipadapterApplyFromParams(ipadapter):
             "optional": {
                 "optional_ipadapter": ("IPADAPTER",),
                 "image_negative": ("IMAGE",),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             }
         }
 
@@ -1054,12 +1082,12 @@ class ipadapterApplyFromParams(ipadapter):
     CATEGORY = "EasyUse/Adapter"
     FUNCTION = "apply"
 
-    def apply(self, model, preset, ipadapter_params, combine_embeds, embeds_scaling, cache_mode, optional_ipadapter=None, image_negative=None,):
-        model, ipadapter = self.load_model(model, preset, 0, 'CPU', clip_vision=None, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
+    def apply(self, model, preset, ipadapter_params, combine_embeds, embeds_scaling, cache_mode, optional_ipadapter=None, image_negative=None, context: execution_context.ExecutionContext=None):
+        model, ipadapter = self.load_model(context, model, preset, 0, 'CPU', clip_vision=None, optional_ipadapter=optional_ipadapter, cache_mode=cache_mode)
         if "IPAdapterFromParams" not in ALL_NODE_CLASS_MAPPINGS:
             self.error()
         cls = ALL_NODE_CLASS_MAPPINGS["IPAdapterFromParams"]
-        model, image = cls().apply_ipadapter(model, ipadapter, clip_vision=None, combine_embeds=combine_embeds, embeds_scaling=embeds_scaling, image_negative=image_negative, ipadapter_params=ipadapter_params)
+        model, image = cls().apply_ipadapter(context, model, ipadapter, clip_vision=None, combine_embeds=combine_embeds, embeds_scaling=embeds_scaling, image_negative=image_negative, ipadapter_params=ipadapter_params)
 
         return (model, ipadapter)
 
@@ -1069,7 +1097,8 @@ class instantID:
     def error(self):
         raise Exception(f"[ERROR] To use instantIDApply, you need to install 'ComfyUI_InstantID'")
 
-    def run(self, pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps=None, mask=None, control_net=None, positive=None, negative=None, prompt=None, extra_pnginfo=None, my_unique_id=None):
+    def run(self, pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps=None, mask=None, control_net=None, positive=None, negative=None, prompt=None, extra_pnginfo=None, my_unique_id=None,
+            context: execution_context.ExecutionContext=None):
         instantid_model, insightface_model, face_embeds = None, None, None
         model = pipe['model']
         # Load InstantID
@@ -1079,7 +1108,7 @@ class instantID:
             _, instantid_model = backend_cache.cache[cache_key][1]
         if "InstantIDModelLoader" in ALL_NODE_CLASS_MAPPINGS:
             load_instant_cls = ALL_NODE_CLASS_MAPPINGS["InstantIDModelLoader"]
-            instantid_model, = load_instant_cls().load_model(instantid_file)
+            instantid_model, = load_instant_cls().load_model(instantid_file, context=context)
             backend_cache.update_cache(cache_key, 'instantid', (False, instantid_model))
         else:
             self.error()
@@ -1098,7 +1127,7 @@ class instantID:
         if "ApplyInstantID" in ALL_NODE_CLASS_MAPPINGS:
             instantid_apply = ALL_NODE_CLASS_MAPPINGS['ApplyInstantID']
             if control_net is None:
-                control_net = easyCache.load_controlnet(control_net_name, cn_soft_weights)
+                control_net = easyCache.load_controlnet(context, control_net_name, cn_soft_weights)
             model, positive, negative = instantid_apply().apply_instantid(instantid_model, insightface_model, control_net, image, model, positive, negative, start_at, end_at, weight=weight, ip_weight=None, cn_strength=cn_strength, noise=noise, image_kps=image_kps, mask=mask)
         else:
             self.error()
@@ -1128,14 +1157,14 @@ class instantIDApply(instantID):
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {
                 "required":{
                      "pipe": ("PIPE_LINE",),
                      "image": ("IMAGE",),
-                     "instantid_file": (folder_paths.get_filename_list("instantid"),),
+                     "instantid_file": (folder_paths.get_filename_list(context, "instantid"),),
                      "insightface": (["CPU", "CUDA", "ROCM"],),
-                     "control_net_name": (folder_paths.get_filename_list("controlnet"),),
+                     "control_net_name": (folder_paths.get_filename_list(context, "controlnet"),),
                      "cn_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01}),
                      "cn_soft_weights": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001},),
                      "weight": ("FLOAT", {"default": .8, "min": 0.0, "max": 5.0, "step": 0.01, }),
@@ -1149,7 +1178,7 @@ class instantIDApply(instantID):
                     "control_net": ("CONTROL_NET",),
                 },
                 "hidden": {
-                    "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID"
+                    "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT",
                 },
         }
 
@@ -1160,10 +1189,12 @@ class instantIDApply(instantID):
     CATEGORY = "EasyUse/Adapter"
 
 
-    def apply(self, pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps=None, mask=None, control_net=None, prompt=None, extra_pnginfo=None, my_unique_id=None):
+    def apply(self, pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps=None, mask=None, control_net=None, prompt=None, extra_pnginfo=None, my_unique_id=None,
+              context: execution_context.ExecutionContext=None):
         positive = pipe['positive']
         negative = pipe['negative']
-        return self.run(pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps, mask, control_net, positive, negative, prompt, extra_pnginfo, my_unique_id)
+        return self.run(pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps, mask, control_net, positive, negative, prompt, extra_pnginfo, my_unique_id,
+                        context=context)
 
 #Apply InstantID Advanced
 class instantIDApplyAdvanced(instantID):
@@ -1173,14 +1204,14 @@ class instantIDApplyAdvanced(instantID):
         pass
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls, context: execution_context.ExecutionContext):
         return {
                 "required":{
                      "pipe": ("PIPE_LINE",),
                      "image": ("IMAGE",),
-                     "instantid_file": (folder_paths.get_filename_list("instantid"),),
+                     "instantid_file": (folder_paths.get_filename_list(context, "instantid"),),
                      "insightface": (["CPU", "CUDA", "ROCM"],),
-                     "control_net_name": (folder_paths.get_filename_list("controlnet"),),
+                     "control_net_name": (folder_paths.get_filename_list(context, "controlnet"),),
                      "cn_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01}),
                      "cn_soft_weights": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001},),
                      "weight": ("FLOAT", {"default": .8, "min": 0.0, "max": 5.0, "step": 0.01, }),
@@ -1196,7 +1227,7 @@ class instantIDApplyAdvanced(instantID):
                     "negative": ("CONDITIONING",),
                 },
                 "hidden": {
-                    "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID"
+                    "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO", "my_unique_id": "UNIQUE_ID", "context": "EXECUTION_CONTEXT",
                 },
         }
 
@@ -1206,20 +1237,22 @@ class instantIDApplyAdvanced(instantID):
     FUNCTION = "apply_advanced"
     CATEGORY = "EasyUse/Adapter"
 
-    def apply_advanced(self, pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps=None, mask=None, control_net=None, positive=None, negative=None, prompt=None, extra_pnginfo=None, my_unique_id=None):
+    def apply_advanced(self, pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps=None, mask=None, control_net=None, positive=None, negative=None, prompt=None, extra_pnginfo=None, my_unique_id=None,
+                       context: execution_context.ExecutionContext=None):
 
         positive = positive if positive is not None else pipe['positive']
         negative = negative if negative is not None else pipe['negative']
 
-        return self.run(pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps, mask, control_net, positive, negative, prompt, extra_pnginfo, my_unique_id)
+        return self.run(pipe, image, instantid_file, insightface, control_net_name, cn_strength, cn_soft_weights, weight, start_at, end_at, noise, image_kps, mask, control_net, positive, negative, prompt, extra_pnginfo, my_unique_id,
+                        context=context)
 
 class applyPulID:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {
             "required": {
                 "model": ("MODEL",),
-                "pulid_file": (folder_paths.get_filename_list("pulid"),),
+                "pulid_file": (folder_paths.get_filename_list(context, "pulid"),),
                 "insightface": (["CPU", "CUDA", "ROCM"],),
                 "image": ("IMAGE",),
                 "method": (["fidelity", "style", "neutral"],),
@@ -1229,6 +1262,9 @@ class applyPulID:
             },
             "optional": {
                 "attn_mask": ("MASK",),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT",
             },
         }
 
@@ -1241,7 +1277,8 @@ class applyPulID:
     def error(self):
         raise Exception(f"[ERROR] To use pulIDApply, you need to install 'ComfyUI_PulID'")
 
-    def run(self, model, image, pulid_file, insightface, weight, start_at, end_at, method=None, noise=0.0, fidelity=None, projection=None, attn_mask=None, prompt=None, extra_pnginfo=None, my_unique_id=None):
+    def run(self, model, image, pulid_file, insightface, weight, start_at, end_at, method=None, noise=0.0, fidelity=None, projection=None, attn_mask=None, prompt=None, extra_pnginfo=None, my_unique_id=None,
+            context: execution_context.ExecutionContext=None):
         pulid_model, insightface_model, eva_clip = None, None, None
         # Load PulID
         cache_key = 'pulID'
@@ -1250,7 +1287,7 @@ class applyPulID:
             _, pulid_model = backend_cache.cache[cache_key][1]
         if "PulidModelLoader" in ALL_NODE_CLASS_MAPPINGS:
             load_pulid_cls = ALL_NODE_CLASS_MAPPINGS["PulidModelLoader"]
-            pulid_model, = load_pulid_cls().load_model(pulid_file)
+            pulid_model, = load_pulid_cls().load_model(pulid_file, context=context)
             backend_cache.update_cache(cache_key, 'pulid', (False, pulid_model))
         else:
             self.error()
@@ -1296,11 +1333,11 @@ class applyPulID:
 class applyPulIDADV(applyPulID):
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {
             "required": {
                 "model": ("MODEL",),
-                "pulid_file": (folder_paths.get_filename_list("pulid"),),
+                "pulid_file": (folder_paths.get_filename_list(context, "pulid"),),
                 "insightface": (["CPU", "CUDA", "ROCM"],),
                 "image": ("IMAGE",),
                 "weight": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 5.0, "step": 0.05}),
