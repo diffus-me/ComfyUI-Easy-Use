@@ -1829,7 +1829,24 @@ class loadImageBase64:
       return cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+  def process_base64_data(self, image_data: str) -> str:
+    if not image_data:
+      return ""
+
+    if image_data.startswith("data:"):
+      parts = image_data.split(";base64,", 1)
+      if len(parts) == 2:
+        return parts[1]
+      else:
+        return ""
+
+    return image_data
+
   def load_image(self, base64_data, image_output, save_prefix, prompt=None, extra_pnginfo=None, context: execution_context.ExecutionContext = None):
+    base64_data = self.process_base64_data(base64_data)
+    if not base64_data:
+      return {"ui": {},
+              "result": (None, None)}
     nparr = np.frombuffer(base64.b64decode(base64_data), np.uint8)
 
     result = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
