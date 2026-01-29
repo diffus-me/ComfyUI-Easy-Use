@@ -1064,7 +1064,7 @@ class imageChooser(PreviewImage):
       images_preview, = imageScaleDownBy().image_scale_down_by(images_in, preview_rescale)
     else:
       images_preview = images_in
-    result = self.save_images(images=images_preview, prompt=prompt, extra_pnginfo=pnginfo)
+    result = self.save_images(images=images_preview, prompt=prompt, extra_pnginfo=pnginfo, context=context)
     if "ui" in result and "images" in result['ui']:
       images = result["ui"]["images"]
     else:
