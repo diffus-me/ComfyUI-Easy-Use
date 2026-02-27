@@ -201,6 +201,7 @@ REMBG_MODELS = {
 
 #ipadapter
 IPADAPTER_DIR = os.path.join(folder_paths.models_dir, "ipadapter")
+folder_paths.add_model_folder_path("ipadapter/loras", os.path.join(folder_paths.models_dir, "ipadapter/loras"))
 IPADAPTER_MODELS = {
     "LIGHT - SD1.5 only (low strength)": {
         "sd1": {

@@ -412,14 +412,14 @@ class ipadapter:
         return lora_pattern
 
     def get_lora_file(self, context: execution_context.ExecutionContext, preset, pattern, model_type, model, model_strength, clip_strength, clip=None):
-        lora_list = folder_paths.get_filename_list(context, "loras")
+        lora_list = folder_paths.get_filename_list(context, "ipadapter/loras")
         lora_files = [e for e in lora_list if re.search(pattern, e, re.IGNORECASE)]
         lora_name = lora_files[0] if lora_files else None
         if lora_name:
             return easyCache.load_lora(context, {"model": model, "clip": clip, "lora_name": lora_name, "model_strength":model_strength, "clip_strength":clip_strength},)
         else:
             if "lora_url" in IPADAPTER_MODELS[preset][model_type]:
-                lora_name = get_local_filepath(IPADAPTER_MODELS[preset][model_type]["lora_url"], os.path.join(folder_paths.models_dir, "loras"))
+                lora_name = get_local_filepath(IPADAPTER_MODELS[preset][model_type]["lora_url"], os.path.join(folder_paths.models_dir, "ipadapter/loras"))
                 return easyCache.load_lora(context, {"model": model, "clip": clip, "lora_name": lora_name, "model_strength":model_strength, "clip_strength":clip_strength},)
             return (model, clip)
 
