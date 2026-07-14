@@ -1259,7 +1259,7 @@ class loraSwitcher:
                 "optional_lora_stack": ("LORA_STACK",),
             },
             "hidden": {
-                "context": "EXECTION_CONTEXT",
+                "context": "EXECUTION_CONTEXT",
             }
         }
 

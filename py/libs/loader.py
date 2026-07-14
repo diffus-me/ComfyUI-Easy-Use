@@ -577,7 +577,7 @@ class easyLoader:
             with applyKolorsUnet():
                 unet_path = folder_paths.get_full_path(context, "unet", unet_name)
                 sd = comfy.utils.load_torch_file(unet_path)
-                model = comfy.sd.load_unet_state_dict(sd)
+                model = comfy.sd.load_unet_state_dict(sd, model_name=unet_name)
                 if model is None:
                     raise RuntimeError("ERROR: Could not detect model type of: {}".format(unet_path))
 
